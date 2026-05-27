@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
-import { Select } from '@/components/ui/Select'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
-import { formatDate } from '@/lib/bookingUtils'
-import { Plus, Users, MapPin, ClipboardList } from 'lucide-react'
+import { Select } from '@/components/ui/Select'
+import { Plus, MapPin, ClipboardList } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
@@ -21,11 +20,8 @@ export default function Settings() {
   const [tab, setTab] = useState('Users')
   const [users, setUsers] = useState([])
   const [locations, setLocations] = useState([])
-  const [auditLog, setAuditLog] = useState([])
-  const [loading, setLoading] = useState(false)
   const [userDialog, setUserDialog] = useState(false)
   const [locDialog, setLocDialog] = useState(false)
-  const [userForm, setUserForm] = useState({ email: '', full_name: '', role: 'employee', location_id: '' })
   const [locForm, setLocForm] = useState({ name: '', city: '' })
   const [saving, setSaving] = useState(false)
 
@@ -35,14 +31,12 @@ export default function Settings() {
   }, [isAdmin])
 
   async function fetchAll() {
-    setLoading(true)
     const [uRes, lRes] = await Promise.all([
       supabase.from('profiles').select('*, location:locations(name)').order('created_at'),
       supabase.from('locations').select('*').order('name'),
     ])
     setUsers(uRes.data || [])
     setLocations(lRes.data || [])
-    setLoading(false)
   }
 
   async function saveLocation() {
@@ -60,7 +54,13 @@ export default function Settings() {
   async function toggleUserRole(user) {
     const newRole = user.role === 'admin' ? 'employee' : 'admin'
     await supabase.from('profiles').update({ role: newRole }).eq('id', user.id)
-    toast.success(`${user.full_name} is now ${newRole}`)
+    toast.success(`${user.full_name || 'User'} is now ${newRole}`)
+    fetchAll()
+  }
+
+  async function assignLocation(userId, locationId) {
+    await supabase.from('profiles').update({ location_id: locationId || null }).eq('id', userId)
+    toast.success(locationId ? 'Location assigned' : 'Location restriction removed')
     fetchAll()
   }
 
@@ -90,16 +90,31 @@ export default function Settings() {
           </div>
           {users.map(u => (
             <Card key={u.id}>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">{u.full_name || 'Unnamed'}</p>
-                  <p className="text-xs text-gray-400">{u.location?.name || 'All locations'}</p>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">{u.full_name || 'Unnamed'}</p>
+                    <p className="text-xs text-gray-400">{u.location?.name || 'All locations (no restriction)'}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={u.role === 'admin' ? 'info' : 'default'}>{u.role}</Badge>
+                    <button onClick={() => toggleUserRole(u)} className="text-xs text-[#1e3a5f] hover:underline">
+                      Toggle role
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={u.role === 'admin' ? 'info' : 'default'}>{u.role}</Badge>
-                  <button onClick={() => toggleUserRole(u)} className="text-xs text-[#1e3a5f] hover:underline">
-                    Toggle
-                  </button>
+                  <Label className="text-xs text-gray-500 w-24 shrink-0">Location access</Label>
+                  <Select
+                    value={u.location_id || ''}
+                    onChange={e => assignLocation(u.id, e.target.value)}
+                    className="flex-1 h-8 text-xs"
+                  >
+                    <option value="">All locations (admin/unrestricted)</option>
+                    {locations.map(l => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </Select>
                 </div>
               </CardContent>
             </Card>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
 import { formatCurrency, formatDate, generateReceiptNumber, getPaymentStatus } from '@/lib/bookingUtils'
 import { downloadReceipt, shareReceiptWhatsApp } from '@/lib/receiptGenerator'
-import { ChevronLeft, Download, Share2, Plus } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Download, Share2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const statusBadge = {
@@ -30,8 +30,10 @@ export default function BookingDetail() {
   const [loading, setLoading] = useState(true)
   const [payDialog, setPayDialog] = useState(false)
   const [statusDialog, setStatusDialog] = useState(false)
+  const [cancelDialog, setCancelDialog] = useState(false)
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'cash' })
   const [newStatus, setNewStatus] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { fetchAll() }, [id])
@@ -51,6 +53,10 @@ export default function BookingDetail() {
 
   async function recordPayment() {
     if (!payForm.amount || Number(payForm.amount) <= 0) { toast.error('Enter a valid amount'); return }
+    if (Number(payForm.amount) > Number(booking.outstanding_balance || 0)) {
+      toast.error('Payment cannot exceed the outstanding balance')
+      return
+    }
     setSaving(true)
 
     const { count } = await supabase.from('payments').select('*', { count: 'exact', head: true })
@@ -72,9 +78,29 @@ export default function BookingDetail() {
     // Update booking totals
     const newPaid = (booking.amount_paid || 0) + Number(payForm.amount)
     const newStatus = getPaymentStatus(booking.total_amount, newPaid)
-    await supabase.from('bookings').update({ amount_paid: newPaid, payment_status: newStatus }).eq('id', id)
+    const newBalance = Math.max(0, (booking.total_amount || 0) - newPaid)
+    await supabase.from('bookings').update({ amount_paid: newPaid, outstanding_balance: newBalance, payment_status: newStatus }).eq('id', id)
 
     toast.success(`Payment recorded — ${receiptNum}`)
+    downloadReceipt({
+      receiptNumber: receiptNum,
+      paymentDate: new Date().toISOString().split('T')[0],
+      clientName: booking.client?.full_name,
+      clientPhone: booking.client?.phone,
+      clientNRC: booking.client?.nrc_or_passport,
+      apartmentNumber: booking.apartment?.apartment_number,
+      location: booking.apartment?.location?.name,
+      checkIn: booking.check_in_date,
+      checkOut: booking.check_out_date,
+      numberOfDays: booking.number_of_days,
+      ratePerDay: booking.rate_per_day,
+      totalAmount: booking.total_amount,
+      amountPaid: Number(payForm.amount),
+      outstandingBalance: (booking.outstanding_balance || 0) - Number(payForm.amount),
+      paymentMethod: payForm.payment_method,
+      staffName: user?.email,
+      bookingRef: booking.booking_reference,
+    })
     setPayDialog(false)
     setPayForm({ amount: '', payment_method: 'cash' })
     fetchAll()
@@ -99,6 +125,54 @@ export default function BookingDetail() {
     await supabase.from('bookings').update({ booking_status: newStatus }).eq('id', id)
     toast.success('Status updated')
     setStatusDialog(false)
+    fetchAll()
+    setSaving(false)
+  }
+
+  async function cancelBooking() {
+    const reason = cancelReason.trim()
+    if (!reason) {
+      toast.error('Enter a cancellation reason')
+      return
+    }
+
+    const confirmed = window.confirm(
+      'Cancel this booking and release the apartment? Payment history will be kept for audit.'
+    )
+    if (!confirmed) return
+
+    setSaving(true)
+
+    const notes = [
+      booking.notes,
+      `Cancelled on ${new Date().toISOString().split('T')[0]} by ${user?.email || 'staff'}: ${reason}`,
+    ].filter(Boolean).join('\n')
+
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .update({ booking_status: 'cancelled', notes })
+      .eq('id', id)
+
+    if (bookingError) {
+      toast.error(bookingError.message)
+      setSaving(false)
+      return
+    }
+
+    const { error: apartmentError } = await supabase
+      .from('apartments')
+      .update({ status: 'available' })
+      .eq('id', booking.apartment_id)
+
+    if (apartmentError) {
+      toast.error(apartmentError.message)
+      setSaving(false)
+      return
+    }
+
+    toast.success('Booking cancelled and apartment released')
+    setCancelDialog(false)
+    setCancelReason('')
     fetchAll()
     setSaving(false)
   }
@@ -181,10 +255,16 @@ export default function BookingDetail() {
       {/* Action buttons */}
       <div className="grid grid-cols-2 gap-3">
         <Button variant="outline" onClick={() => setStatusDialog(true)}>Update Status</Button>
-        <Button onClick={() => setPayDialog(true)}>
+        <Button onClick={() => setPayDialog(true)} disabled={booking.booking_status === 'cancelled'}>
           <Plus size={16} /> Record Payment
         </Button>
       </div>
+
+      {isAdmin && booking.booking_status !== 'cancelled' && (
+        <Button variant="destructive" className="w-full" onClick={() => setCancelDialog(true)}>
+          <AlertTriangle size={16} /> Cancel / Reverse Booking
+        </Button>
+      )}
 
       {/* Payments history */}
       {payments.length > 0 && (
@@ -265,6 +345,37 @@ export default function BookingDetail() {
           <Button variant="outline" className="flex-1" onClick={() => setStatusDialog(false)}>Cancel</Button>
           <Button className="flex-1" onClick={updateStatus} disabled={saving || !newStatus}>
             {saving ? 'Updating…' : 'Update'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* Cancel Booking Dialog */}
+      <Dialog open={cancelDialog} onClose={() => setCancelDialog(false)}>
+        <DialogHeader onClose={() => setCancelDialog(false)}>
+          <DialogTitle>Cancel / Reverse Booking</DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-4">
+          <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
+            This will mark the booking as cancelled and make the apartment available again. Existing payments and receipts stay saved for audit and refund tracking.
+          </div>
+          <div>
+            <Label>Cancellation Reason</Label>
+            <Input
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              placeholder="Guest cancelled, duplicate booking, date change..."
+            />
+          </div>
+          {booking.amount_paid > 0 && (
+            <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+              Paid amount on record: <strong>{formatCurrency(booking.amount_paid)}</strong>. Record any refund outside this cancellation step until refund tracking is added.
+            </div>
+          )}
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" className="flex-1" onClick={() => setCancelDialog(false)}>Keep Booking</Button>
+          <Button variant="destructive" className="flex-1" onClick={cancelBooking} disabled={saving}>
+            {saving ? 'Cancelling...' : 'Cancel Booking'}
           </Button>
         </DialogFooter>
       </Dialog>

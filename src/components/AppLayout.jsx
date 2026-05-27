@@ -1,6 +1,5 @@
 import { Outlet } from 'react-router-dom'
 import BottomNav from './BottomNav'
-import { Toaster } from 'react-hot-toast'
 
 export default function AppLayout() {
   return (
@@ -9,13 +8,6 @@ export default function AppLayout() {
         <Outlet />
       </main>
       <BottomNav />
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          style: { borderRadius: '12px', fontSize: '14px' },
-          success: { iconTheme: { primary: '#1e3a5f', secondary: '#fff' } },
-        }}
-      />
     </div>
   )
 }

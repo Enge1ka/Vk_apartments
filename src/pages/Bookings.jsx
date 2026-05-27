@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { formatCurrency, formatDate } from '@/lib/bookingUtils'
+import { useAuth } from '@/hooks/useAuth'
 import { Plus, Search, BedDouble } from 'lucide-react'
 
 const statusBadge = {
@@ -23,17 +24,26 @@ const paymentBadge = {
 }
 
 export default function Bookings() {
+  const { isRestricted, locationId } = useAuth()
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPayment, setFilterPayment] = useState('')
 
-  useEffect(() => { fetchBookings() }, [])
+  useEffect(() => { fetchBookings() }, [isRestricted, locationId])
 
   async function fetchBookings() {
     setLoading(true)
-    const { data } = await supabase
+
+    let aptIds = null
+    if (isRestricted && locationId) {
+      const { data: apts } = await supabase.from('apartments').select('id').eq('location_id', locationId)
+      aptIds = (apts || []).map(a => a.id)
+      if (aptIds.length === 0) { setBookings([]); setLoading(false); return }
+    }
+
+    let query = supabase
       .from('bookings')
       .select(`
         id, booking_reference, check_in_date, check_out_date,
@@ -43,6 +53,10 @@ export default function Bookings() {
         apartment:apartments(apartment_number, type, location:locations(name))
       `)
       .order('created_at', { ascending: false })
+
+    if (aptIds) query = query.in('apartment_id', aptIds)
+
+    const { data } = await query
     setBookings(data || [])
     setLoading(false)
   }

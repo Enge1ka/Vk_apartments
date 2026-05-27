@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
-import { formatCurrency, formatDate, getStatusColor } from '@/lib/bookingUtils'
+import { formatCurrency, formatDate } from '@/lib/bookingUtils'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
   TrendingUp, Clock, LogOut, Plus
@@ -37,7 +36,7 @@ function StatCard({ label, value, sub, icon: Icon, color = 'blue' }) {
 }
 
 export default function Dashboard() {
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, signOut, isRestricted, locationId } = useAuth()
   const [stats, setStats] = useState({
     total: 0, occupied: 0, available: 0, maintenance: 0, todayRevenue: 0
   })
@@ -49,25 +48,48 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [])
+  }, [isRestricted, locationId])
 
   async function fetchDashboardData() {
     setLoading(true)
     const today = new Date().toISOString().split('T')[0]
     const in3Days = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0]
 
+    // For restricted users, get their apartment IDs first
+    let aptIds = null
+    if (isRestricted && locationId) {
+      const { data: apts } = await supabase.from('apartments').select('id').eq('location_id', locationId)
+      aptIds = (apts || []).map(a => a.id)
+    }
+
+    let aptQuery = supabase.from('apartments').select('status, location_id')
+    if (isRestricted && locationId) aptQuery = aptQuery.eq('location_id', locationId)
+
+    let payQuery = supabase.from('payments').select('amount').gte('payment_date', today).lte('payment_date', today)
+    if (aptIds) {
+      const { data: bks } = await supabase.from('bookings').select('id').in('apartment_id', aptIds)
+      const bkIds = (bks || []).map(b => b.id)
+      if (bkIds.length > 0) payQuery = payQuery.in('booking_id', bkIds)
+      else payQuery = payQuery.eq('booking_id', '00000000-0000-0000-0000-000000000000')
+    }
+
+    let checkInQuery = supabase.from('bookings')
+      .select('*, client:clients(full_name), apartment:apartments(apartment_number, location:locations(name))')
+      .gte('check_in_date', today).lte('check_in_date', in3Days)
+      .neq('booking_status', 'cancelled').order('check_in_date').limit(5)
+    if (aptIds) checkInQuery = checkInQuery.in('apartment_id', aptIds)
+
+    let checkOutQuery = supabase.from('bookings')
+      .select('*, client:clients(full_name), apartment:apartments(apartment_number, location:locations(name))')
+      .gte('check_out_date', today).lte('check_out_date', in3Days)
+      .neq('booking_status', 'cancelled').order('check_out_date').limit(5)
+    if (aptIds) checkOutQuery = checkOutQuery.in('apartment_id', aptIds)
+
+    let locQuery = supabase.from('locations').select('id, name, city')
+    if (isRestricted && locationId) locQuery = locQuery.eq('id', locationId)
+
     const [aptRes, payRes, checkInRes, checkOutRes, locRes] = await Promise.all([
-      supabase.from('apartments').select('status, location_id'),
-      supabase.from('payments').select('amount').gte('payment_date', today).lte('payment_date', today),
-      supabase.from('bookings')
-        .select('*, client:clients(full_name), apartment:apartments(apartment_number, location:locations(name))')
-        .gte('check_in_date', today).lte('check_in_date', in3Days)
-        .neq('booking_status', 'cancelled').order('check_in_date').limit(5),
-      supabase.from('bookings')
-        .select('*, client:clients(full_name), apartment:apartments(apartment_number, location:locations(name))')
-        .gte('check_out_date', today).lte('check_out_date', in3Days)
-        .neq('booking_status', 'cancelled').order('check_out_date').limit(5),
-      supabase.from('locations').select('id, name, city'),
+      aptQuery, payQuery, checkInQuery, checkOutQuery, locQuery,
     ])
 
     const apts = aptRes.data || []
@@ -93,11 +115,19 @@ export default function Dashboard() {
     setLocations(locationStats)
 
     // Recent payments
-    const { data: payments } = await supabase
+    let recentPayQuery = supabase
       .from('payments')
       .select('*, booking:bookings(booking_reference, apartment:apartments(apartment_number))')
       .order('created_at', { ascending: false })
       .limit(5)
+    if (aptIds) {
+      const bkIds = aptIds.length > 0
+        ? (await supabase.from('bookings').select('id').in('apartment_id', aptIds)).data?.map(b => b.id) || []
+        : []
+      if (bkIds.length > 0) recentPayQuery = recentPayQuery.in('booking_id', bkIds)
+      else recentPayQuery = recentPayQuery.eq('booking_id', '00000000-0000-0000-0000-000000000000')
+    }
+    const { data: payments } = await recentPayQuery
     setRecentPayments(payments || [])
 
     setLoading(false)

@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, BedDouble, CalendarDays, CreditCard, MoreHorizontal } from 'lucide-react'
+import { LayoutDashboard, Building2, BedDouble, CreditCard, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { to: '/apartments', label: 'Apartments', icon: Building2 },
   { to: '/bookings', label: 'Bookings', icon: BedDouble },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/payments', label: 'Payments', icon: CreditCard },
   { to: '/more', label: 'More', icon: MoreHorizontal },
 ]

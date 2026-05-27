@@ -7,13 +7,13 @@ import { Select } from '@/components/ui/Select'
 import { Label } from '@/components/ui/Label'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '@/components/ui/Dialog'
 import { formatCurrency, formatDate, generateReceiptNumber, getPaymentStatus } from '@/lib/bookingUtils'
-import { downloadReceipt, shareReceiptWhatsApp } from '@/lib/receiptGenerator'
-import { Search, Download, Share2, CreditCard } from 'lucide-react'
+import { downloadReceipt } from '@/lib/receiptGenerator'
+import { Search, Download, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/hooks/useAuth'
 
 export default function Payments() {
-  const { user } = useAuth()
+  const { user, isRestricted, locationId } = useAuth()
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -25,11 +25,22 @@ export default function Payments() {
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'cash' })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { fetchPayments() }, [])
+  useEffect(() => { fetchPayments() }, [isRestricted, locationId])
 
   async function fetchPayments() {
     setLoading(true)
-    const { data } = await supabase
+
+    let bookingIds = null
+    if (isRestricted && locationId) {
+      const { data: apts } = await supabase.from('apartments').select('id').eq('location_id', locationId)
+      const aptIds = (apts || []).map(a => a.id)
+      if (aptIds.length === 0) { setPayments([]); setLoading(false); return }
+      const { data: bks } = await supabase.from('bookings').select('id').in('apartment_id', aptIds)
+      bookingIds = (bks || []).map(b => b.id)
+      if (bookingIds.length === 0) { setPayments([]); setLoading(false); return }
+    }
+
+    let query = supabase
       .from('payments')
       .select(`
         *, booking:bookings(
@@ -39,28 +50,47 @@ export default function Payments() {
         )
       `)
       .order('created_at', { ascending: false })
+
+    if (bookingIds) query = query.in('booking_id', bookingIds)
+
+    const { data } = await query
     setPayments(data || [])
     setLoading(false)
   }
 
   async function searchBookings() {
     if (!bookingSearch.trim()) return
-    const { data } = await supabase
+
+    let aptIds = null
+    if (isRestricted && locationId) {
+      const { data: apts } = await supabase.from('apartments').select('id').eq('location_id', locationId)
+      aptIds = (apts || []).map(a => a.id)
+    }
+
+    let query = supabase
       .from('bookings')
       .select(`
         id, booking_reference, total_amount, amount_paid, outstanding_balance, check_in_date, check_out_date,
-        client:clients(full_name, phone, nrc_or_passport),
+        client:clients(id, full_name, phone, nrc_or_passport),
         apartment:apartments(apartment_number, location:locations(name))
       `)
       .ilike('booking_reference', `%${bookingSearch}%`)
       .neq('booking_status', 'cancelled')
       .limit(5)
+
+    if (aptIds) query = query.in('apartment_id', aptIds)
+
+    const { data } = await query
     setBookingResults(data || [])
   }
 
   async function savePayment() {
     if (!selectedBooking) { toast.error('Select a booking'); return }
     if (!payForm.amount || Number(payForm.amount) <= 0) { toast.error('Enter a valid amount'); return }
+    if (Number(payForm.amount) > Number(selectedBooking.outstanding_balance || 0)) {
+      toast.error('Payment cannot exceed the outstanding balance')
+      return
+    }
     setSaving(true)
 
     const { count } = await supabase.from('payments').select('*', { count: 'exact', head: true })
@@ -81,7 +111,8 @@ export default function Payments() {
 
     const newPaid = (selectedBooking.amount_paid || 0) + Number(payForm.amount)
     const newStatus = getPaymentStatus(selectedBooking.total_amount, newPaid)
-    await supabase.from('bookings').update({ amount_paid: newPaid, payment_status: newStatus }).eq('id', selectedBooking.id)
+    const newBalance = Math.max(0, (selectedBooking.total_amount || 0) - newPaid)
+    await supabase.from('bookings').update({ amount_paid: newPaid, outstanding_balance: newBalance, payment_status: newStatus }).eq('id', selectedBooking.id)
 
     toast.success(`Payment recorded — ${receiptNum}`)
     setRecordDialog(false)

@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
-import { formatDate, formatCurrency } from '@/lib/bookingUtils'
 import { Search, Users } from 'lucide-react'
 
 export default function Clients() {

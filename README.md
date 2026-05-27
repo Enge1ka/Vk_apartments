@@ -1,16 +1,59 @@
-# React + Vite
+# VK Luxurious Apartments
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Booking, apartment, payment, calendar, client, and reporting management for VK Luxurious Apartments.
 
-Currently, two official plugins are available:
+## Local Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Install dependencies:
 
-## React Compiler
+   ```bash
+   npm install
+   ```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+2. Create a local environment file:
 
-## Expanding the ESLint configuration
+   ```bash
+   cp .env.example .env
+   ```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+3. Add your Supabase values:
+
+   ```bash
+   VITE_SUPABASE_URL=your_supabase_project_url
+   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+
+4. Apply `supabase-schema.sql` to your Supabase project.
+
+   If you already applied the earlier prototype schema, also run `supabase-publish-update.sql` once. It updates Row Level Security so authenticated staff can create locations and apartments from the app.
+
+5. Start development:
+
+   ```bash
+   npm run dev
+   ```
+
+## Production Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## Deploy To Netlify
+
+This repo includes `netlify.toml` with the Vite build command and SPA redirects.
+
+Before publishing, add these environment variables in Netlify:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Then deploy:
+
+```bash
+npx netlify deploy
+npx netlify deploy --prod
+```
+
+Use the preview deploy first, confirm login and database access, then publish to production.

@@ -8,19 +8,20 @@ import { Label } from '@/components/ui/Label'
 import { Select } from '@/components/ui/Select'
 import { Card, CardContent } from '@/components/ui/Card'
 import { formatCurrency, calcDays, calcTotal, generateBookingRef, generateReceiptNumber, getPaymentStatus } from '@/lib/bookingUtils'
+import { downloadReceipt } from '@/lib/receiptGenerator'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const STEPS = ['Client', 'Apartment', 'Payment', 'Confirm']
 
 const EMPTY = {
-  full_name: '', nrc_or_passport: '', phone: '', company: '',
+  full_name: '', nrc_or_passport: '', phone: '', email: '', company: '',
   location_id: '', apartment_id: '', check_in_date: '', check_out_date: '',
   rate_per_day: '', amount_to_pay: '', payment_method: 'cash', notes: '',
 }
 
 export default function NewBooking() {
-  const { user } = useAuth()
+  const { user, isRestricted, locationId } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [form, setForm] = useState(EMPTY)
@@ -33,8 +34,13 @@ export default function NewBooking() {
   const outstandingBalance = totalAmount - (Number(form.amount_to_pay) || 0)
 
   useEffect(() => {
-    supabase.from('locations').select('*').order('name').then(({ data }) => setLocations(data || []))
-  }, [])
+    let q = supabase.from('locations').select('*').order('name')
+    if (isRestricted && locationId) q = q.eq('id', locationId)
+    q.then(({ data }) => {
+      setLocations(data || [])
+      if (isRestricted && locationId) set('location_id', locationId)
+    })
+  }, [isRestricted, locationId])
 
   useEffect(() => {
     if (!form.location_id) { setApartments([]); return }
@@ -73,6 +79,7 @@ export default function NewBooking() {
     }
     if (step === 2) {
       if (Number(form.amount_to_pay) < 0) { toast.error('Payment cannot be negative'); return false }
+      if (Number(form.amount_to_pay) > totalAmount) { toast.error('Payment cannot exceed total amount'); return false }
     }
     return true
   }
@@ -80,7 +87,7 @@ export default function NewBooking() {
   function next() { if (validateStep()) setStep(s => Math.min(s + 1, 3)) }
   function back() { setStep(s => Math.max(s - 1, 0)) }
 
-  async function getNextSequence(table, column) {
+  async function getNextSequence(table) {
     const year = new Date().getFullYear()
     const { count } = await supabase.from(table).select('*', { count: 'exact', head: true })
       .gte('created_at', `${year}-01-01`)
@@ -97,7 +104,8 @@ export default function NewBooking() {
       .select('id')
       .eq('apartment_id', form.apartment_id)
       .neq('booking_status', 'cancelled')
-      .or(`check_in_date.lte.${form.check_out_date},check_out_date.gte.${form.check_in_date}`)
+      .lt('check_in_date', form.check_out_date)
+      .gt('check_out_date', form.check_in_date)
 
     if (conflicts && conflicts.length > 0) {
       toast.error('This apartment is already booked for those dates. Please choose different dates or another apartment.')
@@ -120,6 +128,7 @@ export default function NewBooking() {
         full_name: form.full_name,
         nrc_or_passport: form.nrc_or_passport || null,
         phone: form.phone,
+        email: form.email || null,
         company: form.company || null,
       }).select('id').single()
       if (clientErr) { toast.error('Failed to save client'); setSaving(false); return }
@@ -135,9 +144,11 @@ export default function NewBooking() {
       apartment_id: form.apartment_id,
       check_in_date: form.check_in_date,
       check_out_date: form.check_out_date,
+      number_of_days: days,
       rate_per_day: Number(form.rate_per_day),
       total_amount: totalAmount,
       amount_paid: amountPaid,
+      outstanding_balance: totalAmount - amountPaid,
       payment_status: paymentStatus,
       booking_status: 'confirmed',
       notes: form.notes || null,
@@ -158,6 +169,26 @@ export default function NewBooking() {
         payment_method: form.payment_method,
         receipt_number: receiptNum,
         recorded_by: user?.id,
+      })
+      const apt = apartments.find(a => a.id === form.apartment_id)
+      downloadReceipt({
+        receiptNumber: receiptNum,
+        paymentDate: new Date().toISOString().split('T')[0],
+        clientName: form.full_name,
+        clientPhone: form.phone,
+        clientNRC: form.nrc_or_passport || null,
+        apartmentNumber: apt?.apartment_number,
+        location: locations.find(l => l.id === form.location_id)?.name,
+        checkIn: form.check_in_date,
+        checkOut: form.check_out_date,
+        numberOfDays: days,
+        ratePerDay: Number(form.rate_per_day),
+        totalAmount,
+        amountPaid,
+        outstandingBalance: totalAmount - amountPaid,
+        paymentMethod: form.payment_method,
+        staffName: user?.email,
+        bookingRef,
       })
     }
 
@@ -208,6 +239,10 @@ export default function NewBooking() {
               <Input placeholder="123456/10/1" {...field('nrc_or_passport')} />
             </div>
             <div>
+              <Label>Email (optional)</Label>
+              <Input type="email" placeholder="client@example.com" {...field('email')} />
+            </div>
+            <div>
               <Label>Company (optional)</Label>
               <Input placeholder="ABC Ltd" {...field('company')} />
             </div>
@@ -222,7 +257,7 @@ export default function NewBooking() {
             <h2 className="font-semibold text-gray-800">Apartment & Dates</h2>
             <div>
               <Label>Location *</Label>
-              <Select {...field('location_id')}>
+              <Select {...field('location_id')} disabled={isRestricted}>
                 <option value="">Select location…</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </Select>
@@ -251,6 +286,13 @@ export default function NewBooking() {
                 <Input type="date" {...field('check_out_date')} />
               </div>
             </div>
+            {form.apartment_id && (
+              <div>
+                <Label>Rate per Day (ZMW)</Label>
+                <Input type="number" min="0" step="0.01" placeholder="0.00" {...field('rate_per_day')} />
+                <p className="text-xs text-gray-400 mt-1">Pre-filled from apartment — edit to override</p>
+              </div>
+            )}
             {days > 0 && (
               <div className="bg-blue-50 rounded-xl p-3 text-sm">
                 <p className="text-blue-700"><strong>{days} nights</strong> × {formatCurrency(form.rate_per_day)}/day = <strong>{formatCurrency(totalAmount)}</strong></p>

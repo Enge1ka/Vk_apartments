@@ -1,13 +1,13 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent } from '@/components/ui/Card'
-import { Building2, Users, BarChart3, Settings, ChevronRight, LogOut } from 'lucide-react'
+import { CalendarDays, Users, BarChart3, Settings, ChevronRight, LogOut } from 'lucide-react'
 
 export default function More() {
   const { profile, signOut, isAdmin } = useAuth()
 
   const items = [
-    { to: '/apartments', label: 'Apartments', icon: Building2, desc: 'View & manage all apartments' },
+    { to: '/calendar', label: 'Calendar', icon: CalendarDays, desc: 'View arrivals, stays, and check-outs' },
     { to: '/clients', label: 'Clients', icon: Users, desc: 'Search & view client profiles' },
     { to: '/reports', label: 'Reports', icon: BarChart3, desc: 'Revenue & occupancy reports' },
     ...(isAdmin ? [{ to: '/settings', label: 'Admin Settings', icon: Settings, desc: 'Users, locations, audit log' }] : []),

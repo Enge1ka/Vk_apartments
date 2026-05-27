@@ -116,11 +116,9 @@ CREATE POLICY "auth_insert_clients" ON clients FOR INSERT TO authenticated WITH 
 CREATE POLICY "auth_update_clients" ON clients FOR UPDATE TO authenticated USING (true);
 CREATE POLICY "auth_insert_payments" ON payments FOR INSERT TO authenticated WITH CHECK (true);
 
--- Admins can manage apartments and locations
-CREATE POLICY "admin_manage_apartments" ON apartments FOR ALL TO authenticated
-  USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
-CREATE POLICY "admin_manage_locations" ON locations FOR ALL TO authenticated
-  USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
+-- Authenticated staff can manage apartments and locations
+CREATE POLICY "auth_manage_apartments" ON apartments FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_manage_locations" ON locations FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "admin_manage_profiles" ON profiles FOR UPDATE TO authenticated
   USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
 
