@@ -3,6 +3,18 @@
   publish = "dist"
 
 [[redirects]]
+  from = "http://vkbooking.com/*"
+  to = "https://vkbooking.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "http://www.vkbooking.com/*"
+  to = "https://vkbooking.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
