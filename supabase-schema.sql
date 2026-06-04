@@ -73,6 +73,7 @@ CREATE TABLE payments (
 CREATE TABLE profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name text,
+  email text,
   role text DEFAULT 'employee' CHECK (role IN ('admin','employee')),
   location_id uuid REFERENCES locations(id),
   created_at timestamptz DEFAULT now()
@@ -82,8 +83,8 @@ CREATE TABLE profiles (
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-  INSERT INTO profiles (id, full_name)
-  VALUES (new.id, new.raw_user_meta_data->>'full_name');
+  INSERT INTO profiles (id, full_name, email)
+  VALUES (new.id, new.raw_user_meta_data->>'full_name', new.email);
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

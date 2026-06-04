@@ -93,7 +93,7 @@ export default function Settings() {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">{u.full_name || 'Unnamed'}</p>
+                    <p className="font-medium text-gray-900">{u.full_name || u.email || 'Unnamed'}</p>
                     <p className="text-xs text-gray-400">{u.location?.name || 'All locations (no restriction)'}</p>
                   </div>
                   <div className="flex items-center gap-2">
