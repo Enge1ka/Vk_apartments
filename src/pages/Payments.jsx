@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Label } from '@/components/ui/Label'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '@/components/ui/Dialog'
-import { formatCurrency, formatDate, generateReceiptNumber, getPaymentStatus } from '@/lib/bookingUtils'
+import { formatCurrency, formatDate } from '@/lib/bookingUtils'
 import { downloadReceipt } from '@/lib/receiptGenerator'
 import { Search, Download, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -93,28 +93,16 @@ export default function Payments() {
     }
     setSaving(true)
 
-    const { count } = await supabase.from('payments').select('*', { count: 'exact', head: true })
-      .gte('created_at', `${new Date().getFullYear()}-01-01`)
-    const receiptNum = generateReceiptNumber((count || 0) + 1)
-
-    const { error } = await supabase.from('payments').insert({
-      booking_id: selectedBooking.id,
-      client_id: selectedBooking.client?.id,
-      amount: Number(payForm.amount),
-      payment_date: new Date().toISOString().split('T')[0],
-      payment_method: payForm.payment_method,
-      receipt_number: receiptNum,
-      recorded_by: user?.id,
+    const { data, error } = await supabase.rpc('record_payment', {
+      p_booking_id:     selectedBooking.id,
+      p_amount:         Number(payForm.amount),
+      p_payment_date:   new Date().toISOString().split('T')[0],
+      p_payment_method: payForm.payment_method,
     })
 
     if (error) { toast.error(error.message); setSaving(false); return }
 
-    const newPaid = (selectedBooking.amount_paid || 0) + Number(payForm.amount)
-    const newStatus = getPaymentStatus(selectedBooking.total_amount, newPaid)
-    const newBalance = Math.max(0, (selectedBooking.total_amount || 0) - newPaid)
-    await supabase.from('bookings').update({ amount_paid: newPaid, outstanding_balance: newBalance, payment_status: newStatus }).eq('id', selectedBooking.id)
-
-    toast.success(`Payment recorded — ${receiptNum}`)
+    toast.success(`Payment recorded — ${data.receipt_number}`)
     setRecordDialog(false)
     setSelectedBooking(null)
     setBookingSearch('')

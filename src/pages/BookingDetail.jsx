@@ -9,7 +9,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '
 import { Select } from '@/components/ui/Select'
 import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
-import { formatCurrency, formatDate, generateReceiptNumber, getPaymentStatus } from '@/lib/bookingUtils'
+import { formatCurrency, formatDate } from '@/lib/bookingUtils'
 import { downloadReceipt, shareReceiptWhatsApp } from '@/lib/receiptGenerator'
 import { AlertTriangle, ChevronLeft, Download, Share2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -24,7 +24,7 @@ const statusBadge = {
 export default function BookingDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, isRestricted, locationId, authReady } = useAuth()
   const [booking, setBooking] = useState(null)
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,17 +36,25 @@ export default function BookingDetail() {
   const [cancelReason, setCancelReason] = useState('')
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { fetchAll() }, [id])
+  useEffect(() => { if (authReady) fetchAll() }, [id, authReady])
 
   async function fetchAll() {
     setLoading(true)
-    const [bookRes, payRes] = await Promise.all([
-      supabase.from('bookings').select(`
-        *, client:clients(*), apartment:apartments(*, location:locations(*))
-      `).eq('id', id).single(),
-      supabase.from('payments').select('*').eq('booking_id', id).order('created_at'),
-    ])
-    setBooking(bookRes.data)
+
+    // Fetch booking first so we can enforce location scoping before loading payments.
+    const bookRes = await supabase.from('bookings').select(`
+      *, client:clients(*), apartment:apartments(*, location:locations(*))
+    `).eq('id', id).single()
+
+    const b = bookRes.data
+    // Restricted staff can only access bookings belonging to their assigned location.
+    if (b && isRestricted && locationId && b.apartment?.location?.id !== locationId) {
+      navigate('/bookings')
+      return
+    }
+
+    const payRes = await supabase.from('payments').select('*').eq('booking_id', id).order('created_at')
+    setBooking(b)
     setPayments(payRes.data || [])
     setLoading(false)
   }
@@ -59,28 +67,16 @@ export default function BookingDetail() {
     }
     setSaving(true)
 
-    const { count } = await supabase.from('payments').select('*', { count: 'exact', head: true })
-      .gte('created_at', `${new Date().getFullYear()}-01-01`)
-    const receiptNum = generateReceiptNumber((count || 0) + 1)
-
-    const { error } = await supabase.from('payments').insert({
-      booking_id: id,
-      client_id: booking.client_id,
-      amount: Number(payForm.amount),
-      payment_date: new Date().toISOString().split('T')[0],
-      payment_method: payForm.payment_method,
-      receipt_number: receiptNum,
-      recorded_by: user?.id,
+    const { data, error } = await supabase.rpc('record_payment', {
+      p_booking_id:     id,
+      p_amount:         Number(payForm.amount),
+      p_payment_date:   new Date().toISOString().split('T')[0],
+      p_payment_method: payForm.payment_method,
     })
 
     if (error) { toast.error(error.message); setSaving(false); return }
 
-    // Update booking totals
-    const newPaid = (booking.amount_paid || 0) + Number(payForm.amount)
-    const newStatus = getPaymentStatus(booking.total_amount, newPaid)
-    const newBalance = Math.max(0, (booking.total_amount || 0) - newPaid)
-    await supabase.from('bookings').update({ amount_paid: newPaid, outstanding_balance: newBalance, payment_status: newStatus }).eq('id', id)
-
+    const receiptNum = data.receipt_number
     toast.success(`Payment recorded — ${receiptNum}`)
     downloadReceipt({
       receiptNumber: receiptNum,

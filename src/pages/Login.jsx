@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -82,9 +82,9 @@ export default function Login() {
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>
             <div className="text-center">
-              <a href="/forgot-password" className="text-sm text-[#1e3a5f] hover:underline">
+              <Link to="/forgot-password" className="text-sm text-[#1e3a5f] hover:underline">
                 Forgot password?
-              </a>
+              </Link>
             </div>
           </form>
         </div>

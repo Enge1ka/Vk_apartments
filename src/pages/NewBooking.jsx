@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select } from '@/components/ui/Select'
 import { Card, CardContent } from '@/components/ui/Card'
-import { formatCurrency, calcDays, calcTotal, generateBookingRef, generateReceiptNumber, getPaymentStatus } from '@/lib/bookingUtils'
+import { formatCurrency, calcDays, calcTotal } from '@/lib/bookingUtils'
 import { downloadReceipt } from '@/lib/receiptGenerator'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -87,13 +87,6 @@ export default function NewBooking() {
   function next() { if (validateStep()) setStep(s => Math.min(s + 1, 3)) }
   function back() { setStep(s => Math.max(s - 1, 0)) }
 
-  async function getNextSequence(table) {
-    const year = new Date().getFullYear()
-    const { count } = await supabase.from(table).select('*', { count: 'exact', head: true })
-      .gte('created_at', `${year}-01-01`)
-    return (count || 0) + 1
-  }
-
   async function handleConfirm() {
     if (!validateStep()) return
     setSaving(true)
@@ -113,8 +106,9 @@ export default function NewBooking() {
       return
     }
 
-    const bookingSeq = await getNextSequence('bookings', 'booking_reference')
-    const bookingRef = generateBookingRef(bookingSeq)
+    // Generate booking reference atomically via DB sequence (collision-safe).
+    const { data: bookingRef, error: refErr } = await supabase.rpc('next_booking_ref')
+    if (refErr) { toast.error('Failed to generate booking reference'); setSaving(false); return }
 
     // Upsert client
     let clientId
@@ -136,8 +130,9 @@ export default function NewBooking() {
     }
 
     const amountPaid = Number(form.amount_to_pay) || 0
-    const paymentStatus = getPaymentStatus(totalAmount, amountPaid)
 
+    // Insert booking with amount_paid: 0; the RPC below applies the payment
+    // atomically so it is never counted twice.
     const { data: booking, error: bookErr } = await supabase.from('bookings').insert({
       booking_reference: bookingRef,
       client_id: clientId,
@@ -147,9 +142,9 @@ export default function NewBooking() {
       number_of_days: days,
       rate_per_day: Number(form.rate_per_day),
       total_amount: totalAmount,
-      amount_paid: amountPaid,
-      outstanding_balance: totalAmount - amountPaid,
-      payment_status: paymentStatus,
+      amount_paid: 0,
+      outstanding_balance: totalAmount,
+      payment_status: 'unpaid',
       booking_status: 'confirmed',
       notes: form.notes || null,
       created_by: user?.id,
@@ -157,22 +152,26 @@ export default function NewBooking() {
 
     if (bookErr) { toast.error('Failed to create booking'); setSaving(false); return }
 
-    // Record payment if amount > 0
+    // Record payment atomically via RPC — prevents partial saves and race conditions.
     if (amountPaid > 0) {
-      const receiptSeq = await getNextSequence('payments', 'receipt_number')
-      const receiptNum = generateReceiptNumber(receiptSeq)
-      await supabase.from('payments').insert({
-        booking_id: booking.id,
-        client_id: clientId,
-        amount: amountPaid,
-        payment_date: new Date().toISOString().split('T')[0],
-        payment_method: form.payment_method,
-        receipt_number: receiptNum,
-        recorded_by: user?.id,
+      const { data: payResult, error: payErr } = await supabase.rpc('record_payment', {
+        p_booking_id:     booking.id,
+        p_amount:         amountPaid,
+        p_payment_date:   new Date().toISOString().split('T')[0],
+        p_payment_method: form.payment_method,
       })
+
+      if (payErr) {
+        // Booking exists but payment failed — it stays unpaid so staff can re-record it.
+        toast.error('Booking created but payment failed. Please record the payment from the booking page.')
+        navigate(`/bookings/${booking.id}`)
+        setSaving(false)
+        return
+      }
+
       const apt = apartments.find(a => a.id === form.apartment_id)
       downloadReceipt({
-        receiptNumber: receiptNum,
+        receiptNumber: payResult.receipt_number,
         paymentDate: new Date().toISOString().split('T')[0],
         clientName: form.full_name,
         clientPhone: form.phone,

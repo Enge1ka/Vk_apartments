@@ -16,20 +16,21 @@ export default function CalendarPage() {
   const [locations, setLocations] = useState([])
   const [filterLocation, setFilterLocation] = useState('')
 
-  // Pre-lock filter to user's location when restricted
-  useEffect(() => {
-    if (isRestricted && locationId) setFilterLocation(locationId)
-  }, [isRestricted, locationId])
+  // Derive the effective location: restricted users are locked to their assigned location.
+  const effectiveLocation = isRestricted && locationId ? locationId : filterLocation
 
-  useEffect(() => {
-    supabase.from('locations').select('*').order('name').then(({ data }) => setLocations(data || []))
-    fetchEvents()
-  }, [])
+  async function fetchEvents(locId) {
+    // Resolve apartment IDs for the selected location server-side so
+    // restricted users never receive other locations' booking data.
+    let aptIds = null
+    if (locId) {
+      const { data: apts } = await supabase
+        .from('apartments').select('id').eq('location_id', locId)
+      aptIds = (apts || []).map(a => a.id)
+      if (aptIds.length === 0) { setEvents([]); return }
+    }
 
-  useEffect(() => { fetchEvents() }, [filterLocation])
-
-  async function fetchEvents() {
-    const { data } = await supabase
+    let q = supabase
       .from('bookings')
       .select(`
         id, booking_reference, check_in_date, check_out_date, booking_status,
@@ -38,14 +39,14 @@ export default function CalendarPage() {
       `)
       .neq('booking_status', 'cancelled')
 
-    const apts = (data || []).filter(b =>
-      !filterLocation || b.apartment?.location_id === filterLocation
-    )
+    if (aptIds) q = q.in('apartment_id', aptIds)
+
+    const { data } = await q
 
     const colorMap = {}
     locations.forEach((loc, i) => { colorMap[loc.id] = LOCATION_COLORS[i % LOCATION_COLORS.length] })
 
-    const evts = apts.map(b => ({
+    const evts = (data || []).map(b => ({
       id: b.id,
       title: `${b.apartment?.apartment_number} · ${b.client?.full_name}`,
       start: b.check_in_date,
@@ -57,6 +58,12 @@ export default function CalendarPage() {
     setEvents(evts)
   }
 
+  useEffect(() => {
+    supabase.from('locations').select('*').order('name').then(({ data }) => setLocations(data || []))
+  }, [])
+
+  useEffect(() => { fetchEvents(effectiveLocation) }, [effectiveLocation, locations])
+
   function handleEventClick({ event }) {
     navigate(`/bookings/${event.extendedProps.bookingId}`)
   }
@@ -65,7 +72,7 @@ export default function CalendarPage() {
     <div className="p-4 space-y-3">
       <div className="flex items-center justify-between pt-2">
         <h1 className="text-xl font-bold text-gray-900">Calendar</h1>
-        <Select value={filterLocation} onChange={e => setFilterLocation(e.target.value)} className="w-36 h-9 text-xs" disabled={isRestricted}>
+        <Select value={effectiveLocation} onChange={e => setFilterLocation(e.target.value)} className="w-36 h-9 text-xs" disabled={isRestricted}>
           <option value="">All locations</option>
           {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </Select>
