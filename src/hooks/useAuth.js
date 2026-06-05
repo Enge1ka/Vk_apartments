@@ -5,6 +5,11 @@ import { useAppStore } from '@/store/useAppStore'
 export function useAuth() {
   const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAppStore()
 
+  async function fetchProfile(userId) {
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+    if (data) setProfile(data)
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -21,11 +26,6 @@ export function useAuth() {
 
     return () => subscription.unsubscribe()
   }, [])
-
-  async function fetchProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
-    if (data) setProfile(data)
-  }
 
   async function signIn(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
