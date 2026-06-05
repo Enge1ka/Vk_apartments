@@ -78,12 +78,18 @@ export default function Apartments() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'apartments' }, fetchAll)
       .subscribe()
     return () => supabase.removeChannel(channel)
-  }, [])
+  }, [isRestricted, locationId])
 
   async function fetchAll() {
     setLoading(true)
+    if (isRestricted && !locationId) {
+      setApartments([])
+      setLocations([])
+      setLoading(false)
+      return
+    }
     let aptQuery = supabase.from('apartments').select('*, location:locations(id, name)').order('apartment_number')
-    if (isRestricted && locationId) aptQuery = aptQuery.eq('location_id', locationId)
+    if (isRestricted) aptQuery = aptQuery.eq('location_id', locationId)
 
     const [aptRes, locRes] = await Promise.all([
       aptQuery,

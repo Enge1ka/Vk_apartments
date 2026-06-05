@@ -6,14 +6,15 @@ export function useAuth() {
   const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAppStore()
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-    }).finally(() => setAuthReady(true))
+      if (session?.user) await fetchProfile(session.user.id)
+      setAuthReady(true)
+    })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) await fetchProfile(session.user.id)
       else clearUser()
       setAuthReady(true)
     })
@@ -36,8 +37,10 @@ export function useAuth() {
     clearUser()
   }
 
-  const locationId = profile?.location_id || null
-  const isRestricted = profile?.role !== 'admin' && !!locationId
+  const isAdmin = profile?.role === 'admin'
+  const locationId = profile?.location_id ?? null
+  // All non-admins are restricted; null locationId means no data access
+  const isRestricted = !isAdmin
 
-  return { user, profile, authReady, signIn, signOut, isAdmin: profile?.role === 'admin', locationId, isRestricted }
+  return { user, profile, authReady, signIn, signOut, isAdmin, locationId, isRestricted }
 }

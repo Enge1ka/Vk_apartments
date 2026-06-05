@@ -53,13 +53,15 @@ export default function Settings() {
 
   async function toggleUserRole(user) {
     const newRole = user.role === 'admin' ? 'employee' : 'admin'
-    await supabase.from('profiles').update({ role: newRole }).eq('id', user.id)
-    toast.success(`${user.full_name || 'User'} is now ${newRole}`)
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', user.id)
+    if (error) { toast.error(error.message); return }
+    toast.success(`${user.full_name || user.email || 'User'} is now ${newRole}`)
     fetchAll()
   }
 
   async function assignLocation(userId, locationId) {
-    await supabase.from('profiles').update({ location_id: locationId || null }).eq('id', userId)
+    const { error } = await supabase.from('profiles').update({ location_id: locationId || null }).eq('id', userId)
+    if (error) { toast.error(error.message); return }
     toast.success(locationId ? 'Location assigned' : 'Location restriction removed')
     fetchAll()
   }

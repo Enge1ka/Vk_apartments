@@ -117,9 +117,20 @@ CREATE POLICY "auth_insert_clients" ON clients FOR INSERT TO authenticated WITH 
 CREATE POLICY "auth_update_clients" ON clients FOR UPDATE TO authenticated USING (true);
 CREATE POLICY "auth_insert_payments" ON payments FOR INSERT TO authenticated WITH CHECK (true);
 
--- Authenticated staff can manage apartments and locations
-CREATE POLICY "auth_manage_apartments" ON apartments FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "auth_manage_locations" ON locations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- Apartments: admins have full access; staff can only manage their assigned location's apartments
+CREATE POLICY "auth_manage_apartments" ON apartments FOR ALL TO authenticated
+  USING (
+    (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+    OR location_id = (SELECT location_id FROM profiles WHERE id = auth.uid())
+  )
+  WITH CHECK (
+    (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+    OR location_id = (SELECT location_id FROM profiles WHERE id = auth.uid())
+  );
+-- Locations: admin-only create/update/delete (all authenticated users can still read via auth_read_locations)
+CREATE POLICY "auth_manage_locations" ON locations FOR ALL TO authenticated
+  USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin')
+  WITH CHECK ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
 CREATE POLICY "admin_manage_profiles" ON profiles FOR UPDATE TO authenticated
   USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
 

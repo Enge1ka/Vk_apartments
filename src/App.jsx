@@ -29,9 +29,13 @@ function ConfigurationRequired() {
         <p className="mt-3 text-sm leading-6 text-gray-600">
           Add your Supabase project URL and anon key as environment variables before deploying this app.
         </p>
-        <div className="mt-5 rounded-xl bg-gray-950 p-4 text-sm text-gray-100">
+        <div className="mt-5 rounded-xl bg-gray-950 p-4 text-sm text-gray-100 space-y-1">
+          <p className="text-gray-400 text-xs mb-1">Vite / standard:</p>
           <p>VITE_SUPABASE_URL</p>
           <p>VITE_SUPABASE_ANON_KEY</p>
+          <p className="text-gray-400 text-xs mt-3 mb-1">Next.js / Netlify:</p>
+          <p>NEXT_PUBLIC_SUPABASE_URL</p>
+          <p>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</p>
         </div>
         <p className="mt-4 text-xs text-gray-500">
           For local development, copy .env.example to .env and fill in the values. For Netlify, add them in Site settings.
