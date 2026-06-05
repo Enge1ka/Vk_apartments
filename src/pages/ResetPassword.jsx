@@ -17,14 +17,11 @@ export default function ResetPassword() {
   const [expired, setExpired] = useState(false)
 
   useEffect(() => {
-    // Supabase fires PASSWORD_RECOVERY when the user arrives via the email reset link
+    // Supabase fires PASSWORD_RECOVERY when the user arrives via the email reset link.
+    // We rely solely on this event to set ready — not on getSession — because any
+    // existing authenticated session would otherwise bypass the recovery gate.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
-    })
-
-    // Also check if there's already an active recovery session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true)
     })
 
     // If nothing fires after 8 seconds, the link is likely expired or invalid

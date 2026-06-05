@@ -19,7 +19,7 @@ export default function CalendarPage() {
   // Derive the effective location: restricted users are locked to their assigned location.
   const effectiveLocation = isRestricted && locationId ? locationId : filterLocation
 
-  async function fetchEvents(locId) {
+  async function fetchEvents(locId, locs) {
     // Resolve apartment IDs for the selected location server-side so
     // restricted users never receive other locations' booking data.
     let aptIds = null
@@ -44,7 +44,7 @@ export default function CalendarPage() {
     const { data } = await q
 
     const colorMap = {}
-    locations.forEach((loc, i) => { colorMap[loc.id] = LOCATION_COLORS[i % LOCATION_COLORS.length] })
+    locs.forEach((loc, i) => { colorMap[loc.id] = LOCATION_COLORS[i % LOCATION_COLORS.length] })
 
     const evts = (data || []).map(b => ({
       id: b.id,
@@ -59,10 +59,14 @@ export default function CalendarPage() {
   }
 
   useEffect(() => {
-    supabase.from('locations').select('*').order('name').then(({ data }) => setLocations(data || []))
+    supabase.from('locations').select('*').order('name').then(({ data }) => {
+      const locs = data || []
+      setLocations(locs)
+      fetchEvents(effectiveLocation, locs)
+    })
   }, [])
 
-  useEffect(() => { fetchEvents(effectiveLocation) }, [effectiveLocation, locations])
+  useEffect(() => { fetchEvents(effectiveLocation, locations) }, [effectiveLocation])
 
   function handleEventClick({ event }) {
     navigate(`/bookings/${event.extendedProps.bookingId}`)
