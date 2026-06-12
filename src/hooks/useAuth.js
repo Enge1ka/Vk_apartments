@@ -11,11 +11,14 @@ export function useAuth() {
   }
 
   useEffect(() => {
+    const timeout = setTimeout(() => setAuthReady(true), 8000)
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(timeout)
       setUser(session?.user ?? null)
       if (session?.user) await fetchProfile(session.user.id)
       setAuthReady(true)
-    }).catch(() => setAuthReady(true))
+    }).catch(() => { clearTimeout(timeout); setAuthReady(true) })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null)
