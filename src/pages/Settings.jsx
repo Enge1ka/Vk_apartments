@@ -96,6 +96,7 @@ export default function Settings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-gray-900">{u.full_name || u.email || 'Unnamed'}</p>
+                    {u.email && <p className="text-xs text-blue-500">{u.email}</p>}
                     <p className="text-xs text-gray-400">{u.location?.name || 'All locations (no restriction)'}</p>
                   </div>
                   <div className="flex items-center gap-2">
