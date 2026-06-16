@@ -36,8 +36,14 @@ export function useAuth() {
   }
 
   async function signOut() {
-    await supabase.auth.signOut()
-    clearUser()
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ])
+    } finally {
+      clearUser()
+    }
   }
 
   const isAdmin = profile?.role === 'admin'
