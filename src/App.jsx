@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, Suspense, lazy } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { useAuth } from '@/hooks/useAuth'
 import { isSupabaseConfigured } from '@/lib/supabase'
@@ -8,17 +8,26 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import Login from '@/pages/Login'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
-import Dashboard from '@/pages/Dashboard'
-import Apartments from '@/pages/Apartments'
-import Bookings from '@/pages/Bookings'
-import BookingDetail from '@/pages/BookingDetail'
-import NewBooking from '@/pages/NewBooking'
-import Payments from '@/pages/Payments'
-import CalendarPage from '@/pages/CalendarPage'
-import Reports from '@/pages/Reports'
-import Clients from '@/pages/Clients'
-import Settings from '@/pages/Settings'
-import More from '@/pages/More'
+
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const Apartments = lazy(() => import('@/pages/Apartments'))
+const Bookings = lazy(() => import('@/pages/Bookings'))
+const BookingDetail = lazy(() => import('@/pages/BookingDetail'))
+const NewBooking = lazy(() => import('@/pages/NewBooking'))
+const Payments = lazy(() => import('@/pages/Payments'))
+const CalendarPage = lazy(() => import('@/pages/CalendarPage'))
+const Reports = lazy(() => import('@/pages/Reports'))
+const Clients = lazy(() => import('@/pages/Clients'))
+const Settings = lazy(() => import('@/pages/Settings'))
+const More = lazy(() => import('@/pages/More'))
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-[#1e3a5f]" />
+    </div>
+  )
+}
 
 function ConfigurationRequired() {
   return (
@@ -67,17 +76,17 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPassword />} />
 
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/apartments" element={<Apartments />} />
-              <Route path="/bookings" element={<Bookings />} />
-              <Route path="/bookings/new" element={<NewBooking />} />
-              <Route path="/bookings/:id" element={<BookingDetail />} />
-              <Route path="/payments" element={<Payments />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/clients" element={<Clients />} />
-              <Route path="/more" element={<More />} />
-              <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+              <Route path="/" element={<Suspense fallback={<PageFallback />}><Dashboard /></Suspense>} />
+              <Route path="/apartments" element={<Suspense fallback={<PageFallback />}><Apartments /></Suspense>} />
+              <Route path="/bookings" element={<Suspense fallback={<PageFallback />}><Bookings /></Suspense>} />
+              <Route path="/bookings/new" element={<Suspense fallback={<PageFallback />}><NewBooking /></Suspense>} />
+              <Route path="/bookings/:id" element={<Suspense fallback={<PageFallback />}><BookingDetail /></Suspense>} />
+              <Route path="/payments" element={<Suspense fallback={<PageFallback />}><Payments /></Suspense>} />
+              <Route path="/calendar" element={<Suspense fallback={<PageFallback />}><CalendarPage /></Suspense>} />
+              <Route path="/reports" element={<Suspense fallback={<PageFallback />}><Reports /></Suspense>} />
+              <Route path="/clients" element={<Suspense fallback={<PageFallback />}><Clients /></Suspense>} />
+              <Route path="/more" element={<Suspense fallback={<PageFallback />}><More /></Suspense>} />
+              <Route path="/settings" element={<ProtectedRoute adminOnly><Suspense fallback={<PageFallback />}><Settings /></Suspense></ProtectedRoute>} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />
