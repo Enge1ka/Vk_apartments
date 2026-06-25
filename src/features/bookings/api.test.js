@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/shared/lib/supabase'
 import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
-import { cancelBooking, createBooking, hasOverlappingBooking, listBookingsForCalendar, updateBookingStatus } from './api'
+import {
+  cancelBooking, createBooking, getBookingStatusSummary, hasOverlappingBooking,
+  listBookingsForCalendar, listOutstandingBookings, updateBookingStatus,
+} from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -89,6 +92,45 @@ describe('listBookingsForCalendar', () => {
     vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
     await expect(listBookingsForCalendar('loc-1')).resolves.toEqual([])
     expect(supabase.from).not.toHaveBeenCalled()
+  })
+})
+
+describe('listOutstandingBookings', () => {
+  it('filters to a positive outstanding balance, excludes cancelled, orders descending', async () => {
+    const chain = {
+      select: () => chain, gt: vi.fn(() => chain), neq: vi.fn(() => chain),
+      order: vi.fn(() => Promise.resolve({ data: [{ id: 'b1' }], error: null })),
+    }
+    supabase.from.mockReturnValue(chain)
+
+    const result = await listOutstandingBookings(null)
+    expect(chain.gt).toHaveBeenCalledWith('outstanding_balance', 0)
+    expect(chain.order).toHaveBeenCalledWith('outstanding_balance', { ascending: false })
+    expect(result).toEqual([{ id: 'b1' }])
+  })
+
+  it('short-circuits when the location has no apartments', async () => {
+    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
+    await expect(listOutstandingBookings('loc-1')).resolves.toEqual([])
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+})
+
+describe('getBookingStatusSummary', () => {
+  it('queries the bookings table once per status and shapes the result', async () => {
+    const chain = { select: () => chain, eq: () => chain, gte: () => chain, lte: () => chain }
+    chain.then = (resolve) => resolve({ count: 2 })
+    supabase.from.mockReturnValue(chain)
+
+    const result = await getBookingStatusSummary(null)
+    expect(supabase.from).toHaveBeenCalledTimes(4)
+    expect(supabase.from).toHaveBeenCalledWith('bookings')
+    expect(result).toEqual({ active: 2, upcoming: 2, checkouts: 2, cancelled: 2 })
+  })
+
+  it('returns all zeros when the location has no apartments', async () => {
+    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
+    await expect(getBookingStatusSummary('loc-1')).resolves.toEqual({ active: 0, upcoming: 0, checkouts: 0, cancelled: 0 })
   })
 })
 

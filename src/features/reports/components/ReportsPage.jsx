@@ -1,6 +1,4 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '@/shared/lib/supabase'
-import { useAuth } from '@/features/auth/useAuth'
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
 import { Input } from '@/shared/ui/Input'
@@ -11,179 +9,41 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts'
 import { Download, TrendingUp, AlertCircle, CreditCard, Building2 } from 'lucide-react'
+import { useAuth } from '@/features/auth/useAuth'
+import { useReportsData } from '../useReportsData'
+import { getPresetDates } from '../selectors'
 
 const COLORS = ['#1e3a5f', '#2d8a4e', '#b45309', '#7c3aed', '#dc2626']
 const METHOD_COLORS = { cash: '#1e3a5f', mobile_money: '#2d8a4e', bank_transfer: '#b45309', card: '#7c3aed' }
-const METHOD_LABELS = { cash: 'Cash', mobile_money: 'Mobile Money', bank_transfer: 'Bank Transfer', card: 'Card' }
 
 const TABS = ['Revenue', 'Occupancy', 'Bookings', 'Outstanding']
+const PRESETS = [
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: 'This Week' },
+  { key: 'month', label: 'This Month' },
+  { key: 'last_month', label: 'Last Month' },
+  { key: 'custom', label: 'Custom' },
+]
 
-function getPresetDates(preset) {
+function defaultCustomRange() {
+  const start = new Date(); start.setDate(1)
   const today = new Date()
-  const fmt = d => d.toISOString().split('T')[0]
-  if (preset === 'today') return { from: fmt(today), to: fmt(today) }
-  if (preset === 'week') {
-    const start = new Date(today); start.setDate(today.getDate() - today.getDay())
-    return { from: fmt(start), to: fmt(today) }
-  }
-  if (preset === 'month') {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1)
-    return { from: fmt(start), to: fmt(today) }
-  }
-  if (preset === 'last_month') {
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-    const end = new Date(today.getFullYear(), today.getMonth(), 0)
-    return { from: fmt(start), to: fmt(end) }
-  }
-  return null
+  return { from: start.toISOString().split('T')[0], to: today.toISOString().split('T')[0] }
 }
 
-export default function Reports() {
+export default function ReportsPage() {
   const { isRestricted, locationId } = useAuth()
   const [tab, setTab] = useState('Revenue')
   const [preset, setPreset] = useState('month')
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]
-  })
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0])
+  const [customRange, setCustomRange] = useState(defaultCustomRange)
 
-  const [revenue, setRevenue] = useState({ total: 0, byMethod: [], byLocation: [], byApartment: [], daily: [] })
-  const [outstanding, setOutstanding] = useState({ total: 0, bookings: [] })
-  const [occupancy, setOccupancy] = useState({ current: 0, total: 0, byLocation: [] })
-  const [bookingSummary, setBookingSummary] = useState({ active: 0, upcoming: 0, checkouts: 0, cancelled: 0 })
-  const [loading, setLoading] = useState(false)
+  // Dates are derived from the preset instead of synced into state via an
+  // effect — "custom" is the only case with state of its own to edit.
+  const presetDates = preset !== 'custom' ? getPresetDates(preset) : null
+  const dateFrom = presetDates?.from ?? customRange.from
+  const dateTo = presetDates?.to ?? customRange.to
 
-  useEffect(() => {
-    if (preset !== 'custom') {
-      const dates = getPresetDates(preset)
-      if (dates) { setDateFrom(dates.from); setDateTo(dates.to) }
-    }
-  }, [preset])
-
-  useEffect(() => { fetchAll() }, [dateFrom, dateTo, isRestricted, locationId])
-
-  async function getAptIds() {
-    if (!isRestricted || !locationId) return null
-    const { data } = await supabase.from('apartments').select('id').eq('location_id', locationId)
-    return (data || []).map(a => a.id)
-  }
-
-  async function fetchAll() {
-    setLoading(true)
-    const aptIds = await getAptIds()
-    await Promise.all([
-      fetchRevenue(aptIds),
-      fetchOutstanding(aptIds),
-      fetchOccupancy(),
-      fetchBookings(aptIds),
-    ])
-    setLoading(false)
-  }
-
-  async function fetchRevenue(aptIds) {
-    let bkIds = null
-    if (aptIds) {
-      const { data: bks } = await supabase.from('bookings').select('id').in('apartment_id', aptIds)
-      bkIds = (bks || []).map(b => b.id)
-      if (bkIds.length === 0) {
-        setRevenue({ total: 0, byMethod: [], byLocation: [], byApartment: [], daily: [] })
-        return
-      }
-    }
-
-    let q = supabase
-      .from('payments')
-      .select('amount, payment_date, payment_method, booking:bookings(apartment:apartments(apartment_number, location:locations(name)))')
-      .gte('payment_date', dateFrom)
-      .lte('payment_date', dateTo)
-    if (bkIds) q = q.in('booking_id', bkIds)
-
-    const { data: payments } = await q
-    const list = payments || []
-
-    const total = list.reduce((s, p) => s + Number(p.amount), 0)
-    const byMethod = {}
-    const byLoc = {}
-    const byApt = {}
-    const byDay = {}
-
-    for (const p of list) {
-      const method = p.payment_method || 'unknown'
-      const loc = p.booking?.apartment?.location?.name || 'Unknown'
-      const apt = p.booking?.apartment?.apartment_number || 'Unknown'
-      byMethod[method] = (byMethod[method] || 0) + Number(p.amount)
-      byLoc[loc] = (byLoc[loc] || 0) + Number(p.amount)
-      byApt[apt] = (byApt[apt] || 0) + Number(p.amount)
-      byDay[p.payment_date] = (byDay[p.payment_date] || 0) + Number(p.amount)
-    }
-
-    setRevenue({
-      total,
-      byMethod: Object.entries(byMethod).map(([name, value]) => ({ name: METHOD_LABELS[name] || name, value, key: name })),
-      byLocation: Object.entries(byLoc).map(([name, value]) => ({ name, value })),
-      byApartment: Object.entries(byApt).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, 10),
-      daily: Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date: date.slice(5), amount })),
-    })
-  }
-
-  async function fetchOutstanding(aptIds) {
-    let q = supabase
-      .from('bookings')
-      .select('id, booking_reference, outstanding_balance, total_amount, amount_paid, check_in_date, check_out_date, payment_status, client:clients(full_name, phone), apartment:apartments(apartment_number, location:locations(name))')
-      .gt('outstanding_balance', 0)
-      .neq('booking_status', 'cancelled')
-      .order('outstanding_balance', { ascending: false })
-    if (aptIds) q = q.in('apartment_id', aptIds)
-
-    const { data } = await q
-    const list = data || []
-    setOutstanding({
-      total: list.reduce((s, b) => s + Number(b.outstanding_balance || 0), 0),
-      bookings: list,
-    })
-  }
-
-  async function fetchOccupancy() {
-    let q = supabase.from('apartments').select('status, location:locations(name)')
-    if (isRestricted && locationId) q = q.eq('location_id', locationId)
-    const { data: apts } = await q
-    const total = (apts || []).length
-    const occupied = (apts || []).filter(a => a.status === 'occupied').length
-
-    const byLoc = {}
-    const totalByLoc = {}
-    for (const a of apts || []) {
-      const loc = a.location?.name || 'Unknown'
-      totalByLoc[loc] = (totalByLoc[loc] || 0) + 1
-      if (a.status === 'occupied') byLoc[loc] = (byLoc[loc] || 0) + 1
-    }
-
-    setOccupancy({
-      current: occupied,
-      total,
-      byLocation: Object.entries(totalByLoc).map(([name, total]) => ({
-        name, total, occupied: byLoc[name] || 0,
-        rate: Math.round(((byLoc[name] || 0) / total) * 100),
-      })),
-    })
-  }
-
-  async function fetchBookings(aptIds) {
-    const today = new Date().toISOString().split('T')[0]
-    const base = (status, extra = {}) => {
-      let q = supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('booking_status', status)
-      if (aptIds) q = q.in('apartment_id', aptIds)
-      Object.entries(extra).forEach(([k, v]) => { q = q[k](...v) })
-      return q
-    }
-    const [activeRes, upcomingRes, checkoutRes, cancelRes] = await Promise.all([
-      base('checked_in'),
-      (() => { let q = supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('booking_status', 'confirmed').gte('check_in_date', today); if (aptIds) q = q.in('apartment_id', aptIds); return q })(),
-      (() => { let q = supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('booking_status', 'checked_in').lte('check_out_date', today); if (aptIds) q = q.in('apartment_id', aptIds); return q })(),
-      base('cancelled'),
-    ])
-    setBookingSummary({ active: activeRes.count || 0, upcoming: upcomingRes.count || 0, checkouts: checkoutRes.count || 0, cancelled: cancelRes.count || 0 })
-  }
+  const { revenue, outstanding, occupancy, bookingSummary, loading } = useReportsData({ isRestricted, locationId, dateFrom, dateTo })
 
   function exportCSV() {
     const rows = [['Date', 'Amount (ZMW)']]
@@ -195,14 +55,6 @@ export default function Reports() {
     URL.revokeObjectURL(url)
   }
 
-  const PRESETS = [
-    { key: 'today', label: 'Today' },
-    { key: 'week', label: 'This Week' },
-    { key: 'month', label: 'This Month' },
-    { key: 'last_month', label: 'Last Month' },
-    { key: 'custom', label: 'Custom' },
-  ]
-
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between pt-2">
@@ -210,7 +62,6 @@ export default function Reports() {
         <Button size="sm" variant="outline" onClick={exportCSV}><Download size={14} /> CSV</Button>
       </div>
 
-      {/* Period selector */}
       <div className="flex gap-1 overflow-x-auto pb-1">
         {PRESETS.map(p => (
           <button
@@ -226,17 +77,16 @@ export default function Reports() {
       {preset === 'custom' && (
         <div className="flex gap-2">
           <div className="flex-1">
-            <Label className="text-xs">From</Label>
-            <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-10 text-sm" />
+            <Label htmlFor="report-date-from" className="text-xs">From</Label>
+            <Input id="report-date-from" type="date" value={customRange.from} onChange={e => setCustomRange(r => ({ ...r, from: e.target.value }))} className="h-10 text-sm" />
           </div>
           <div className="flex-1">
-            <Label className="text-xs">To</Label>
-            <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-10 text-sm" />
+            <Label htmlFor="report-date-to" className="text-xs">To</Label>
+            <Input id="report-date-to" type="date" value={customRange.to} onChange={e => setCustomRange(r => ({ ...r, to: e.target.value }))} className="h-10 text-sm" />
           </div>
         </div>
       )}
 
-      {/* Tabs */}
       <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
         {TABS.map(t => (
           <button
@@ -251,10 +101,8 @@ export default function Reports() {
 
       {loading && <div className="text-center text-sm text-gray-400 py-4">Loading…</div>}
 
-      {/* ── REVENUE TAB ── */}
       {tab === 'Revenue' && !loading && (
         <div className="space-y-4">
-          {/* Summary cards */}
           <div className="grid grid-cols-2 gap-3">
             <Card>
               <CardContent className="p-4">
@@ -282,7 +130,6 @@ export default function Reports() {
             </Card>
           </div>
 
-          {/* Payment methods */}
           {revenue.byMethod.length > 0 && (
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard size={16} /> Payment Methods</CardTitle></CardHeader>
@@ -305,7 +152,6 @@ export default function Reports() {
             </Card>
           )}
 
-          {/* Daily chart */}
           {revenue.daily.length > 0 && (
             <Card>
               <CardHeader><CardTitle>Daily Revenue</CardTitle></CardHeader>
@@ -322,7 +168,6 @@ export default function Reports() {
             </Card>
           )}
 
-          {/* By location pie */}
           {revenue.byLocation.length > 1 && (
             <Card>
               <CardHeader><CardTitle>By Location</CardTitle></CardHeader>
@@ -339,7 +184,6 @@ export default function Reports() {
             </Card>
           )}
 
-          {/* By apartment */}
           {revenue.byApartment.length > 0 && (
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><Building2 size={16} /> Top Apartments</CardTitle></CardHeader>
@@ -354,13 +198,12 @@ export default function Reports() {
             </Card>
           )}
 
-          {revenue.total === 0 && !loading && (
+          {revenue.total === 0 && (
             <div className="text-center py-10 text-gray-400 text-sm">No payments recorded in this period.</div>
           )}
         </div>
       )}
 
-      {/* ── OCCUPANCY TAB ── */}
       {tab === 'Occupancy' && !loading && (
         <div className="space-y-4">
           <Card>
@@ -390,7 +233,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── BOOKINGS TAB ── */}
       {tab === 'Bookings' && !loading && (
         <div className="grid grid-cols-2 gap-3">
           {[
@@ -409,7 +251,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── OUTSTANDING TAB ── */}
       {tab === 'Outstanding' && !loading && (
         <div className="space-y-3">
           <Card>

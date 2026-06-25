@@ -37,6 +37,13 @@ const CALENDAR_SELECT = `
   apartment:apartments(apartment_number, location_id, location:locations(id, name))
 `
 
+const OUTSTANDING_SELECT = `
+  id, booking_reference, outstanding_balance, total_amount, amount_paid,
+  check_in_date, check_out_date, payment_status,
+  client:clients(full_name, phone),
+  apartment:apartments(apartment_number, location:locations(name))
+`
+
 const UPCOMING_SELECT = `
   id, check_in_date, check_out_date, outstanding_balance,
   client:clients(full_name),
@@ -71,6 +78,59 @@ export function listUpcomingCheckIns(filters) {
 
 export function listUpcomingCheckOuts(filters) {
   return listUpcomingByDate('check_out_date', filters)
+}
+
+export async function listOutstandingBookings(locationId) {
+  let aptIds = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase
+    .from('bookings')
+    .select(OUTSTANDING_SELECT)
+    .gt('outstanding_balance', 0)
+    .neq('booking_status', BOOKING_STATUS.CANCELLED)
+    .order('outstanding_balance', { ascending: false })
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
+}
+
+// Counts only (no row data) — used for the Reports "Bookings" tab summary
+// cards. "active" and "checkouts" can overlap (a checked-in booking due
+// out today counts in both), matching the original metric's intent.
+export async function getBookingStatusSummary(locationId) {
+  let aptIds = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return { active: 0, upcoming: 0, checkouts: 0, cancelled: 0 }
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+
+  function countQuery(status, refine) {
+    let q = supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('booking_status', status)
+    if (aptIds) q = q.in('apartment_id', aptIds)
+    return refine ? refine(q) : q
+  }
+
+  const [activeRes, upcomingRes, checkoutRes, cancelRes] = await Promise.all([
+    countQuery(BOOKING_STATUS.CHECKED_IN),
+    countQuery(BOOKING_STATUS.CONFIRMED, q => q.gte('check_in_date', today)),
+    countQuery(BOOKING_STATUS.CHECKED_IN, q => q.lte('check_out_date', today)),
+    countQuery(BOOKING_STATUS.CANCELLED),
+  ])
+
+  return {
+    active: activeRes.count || 0,
+    upcoming: upcomingRes.count || 0,
+    checkouts: checkoutRes.count || 0,
+    cancelled: cancelRes.count || 0,
+  }
 }
 
 export async function listBookings(filters = {}) {

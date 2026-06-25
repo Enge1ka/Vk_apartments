@@ -16,7 +16,7 @@ const BookingDetail = lazy(() => import('@/features/bookings/components/BookingD
 const NewBooking = lazy(() => import('@/features/bookings/components/NewBookingPage'))
 const Payments = lazy(() => import('@/features/payments/components/PaymentsPage'))
 const CalendarPage = lazy(() => import('@/features/calendar/components/CalendarPage'))
-const Reports = lazy(() => import('@/pages/Reports'))
+const Reports = lazy(() => import('@/features/reports/components/ReportsPage'))
 const Clients = lazy(() => import('@/features/clients/components/ClientsPage'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const More = lazy(() => import('@/pages/More'))
