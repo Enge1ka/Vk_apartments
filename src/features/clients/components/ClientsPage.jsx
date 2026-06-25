@@ -1,27 +1,16 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { useState } from 'react'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { Input } from '@/shared/ui/Input'
+import { Label } from '@/shared/ui/Label'
 import { Search, Users } from 'lucide-react'
+import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
+import { listClients } from '../api'
 
-export default function Clients() {
-  const [clients, setClients] = useState([])
-  const [loading, setLoading] = useState(true)
+export default function ClientsPage() {
+  const { data: clients, loading } = useSupabaseQuery(listClients, [])
   const [search, setSearch] = useState('')
 
-  useEffect(() => { fetchClients() }, [])
-
-  async function fetchClients() {
-    setLoading(true)
-    const { data } = await supabase
-      .from('clients')
-      .select('*, bookings(id, booking_reference, total_amount, booking_status, check_in_date)')
-      .order('created_at', { ascending: false })
-    setClients(data || [])
-    setLoading(false)
-  }
-
-  const filtered = clients.filter(c => {
+  const filtered = (clients ?? []).filter(c => {
     const q = search.toLowerCase()
     return !search || c.full_name?.toLowerCase().includes(q) || c.phone?.includes(q) || c.nrc_or_passport?.toLowerCase().includes(q)
   })
@@ -31,8 +20,9 @@ export default function Clients() {
       <h1 className="text-xl font-bold text-gray-900 pt-2">Clients</h1>
 
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <Input placeholder="Search by name, phone, NRC…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+        <Label htmlFor="client-search" className="sr-only">Search clients</Label>
+        <Input id="client-search" placeholder="Search by name, phone, NRC…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       {loading ? (
