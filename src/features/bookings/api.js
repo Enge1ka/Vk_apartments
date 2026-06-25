@@ -37,6 +37,42 @@ const CALENDAR_SELECT = `
   apartment:apartments(apartment_number, location_id, location:locations(id, name))
 `
 
+const UPCOMING_SELECT = `
+  id, check_in_date, check_out_date, outstanding_balance,
+  client:clients(full_name),
+  apartment:apartments(apartment_number, location:locations(name))
+`
+
+async function listUpcomingByDate(dateColumn, { locationId, fromDate, toDate, limit = 5 } = {}) {
+  let aptIds = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase
+    .from('bookings')
+    .select(UPCOMING_SELECT)
+    .gte(dateColumn, fromDate)
+    .lte(dateColumn, toDate)
+    .neq('booking_status', BOOKING_STATUS.CANCELLED)
+    .order(dateColumn)
+    .limit(limit)
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
+}
+
+export function listUpcomingCheckIns(filters) {
+  return listUpcomingByDate('check_in_date', filters)
+}
+
+export function listUpcomingCheckOuts(filters) {
+  return listUpcomingByDate('check_out_date', filters)
+}
+
 export async function listBookings(filters = {}) {
   let aptIds = null
   if (filters.locationId) {

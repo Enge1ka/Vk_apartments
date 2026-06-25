@@ -13,6 +13,10 @@ const LIST_SELECT = `
   )
 `
 
+// filters: locationId (scopes via apartments -> bookings), dateFrom/dateTo
+// (inclusive, on payment_date), limit. Reused as-is by the Payments page,
+// Dashboard (today's revenue + recent payments), and Reports (date-range
+// revenue) — previously each re-implemented the location-scoping chain.
 export async function listPayments(filters = {}) {
   let bookingIds = null
   if (filters.locationId) {
@@ -24,6 +28,9 @@ export async function listPayments(filters = {}) {
 
   let query = supabase.from('payments').select(LIST_SELECT).order('created_at', { ascending: false })
   if (bookingIds) query = query.in('booking_id', bookingIds)
+  if (filters.dateFrom) query = query.gte('payment_date', filters.dateFrom)
+  if (filters.dateTo) query = query.lte('payment_date', filters.dateTo)
+  if (filters.limit) query = query.limit(filters.limit)
 
   const { data, error } = await query
   if (error) throw error

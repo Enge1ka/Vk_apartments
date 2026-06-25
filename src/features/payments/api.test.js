@@ -38,6 +38,21 @@ describe('listPayments', () => {
     expect(chain.in).toHaveBeenCalledWith('booking_id', ['booking-1'])
     expect(result).toEqual([{ id: 'p1' }])
   })
+
+  it('applies dateFrom/dateTo/limit when given', async () => {
+    const chain = {
+      select: () => chain, order: () => chain,
+      gte: vi.fn(() => chain), lte: vi.fn(() => chain),
+      limit: vi.fn(() => Promise.resolve({ data: [], error: null })),
+    }
+    supabase.from.mockReturnValue(chain)
+
+    await listPayments({ dateFrom: '2026-01-01', dateTo: '2026-01-31', limit: 5 })
+
+    expect(chain.gte).toHaveBeenCalledWith('payment_date', '2026-01-01')
+    expect(chain.lte).toHaveBeenCalledWith('payment_date', '2026-01-31')
+    expect(chain.limit).toHaveBeenCalledWith(5)
+  })
 })
 
 describe('recordPayment', () => {
