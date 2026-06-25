@@ -23,15 +23,30 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
 
-4. Apply `supabase-schema.sql` to your Supabase project.
+4. Apply the SQL migrations to your Supabase project, in order:
 
-   If you already applied the earlier prototype schema, also run `supabase-publish-update.sql` once. It updates Row Level Security so authenticated staff can create locations and apartments from the app.
+   - `supabase-schema.sql` — base tables, RLS, seed data.
+   - `supabase-fixes.sql` — `next_booking_ref()`, `record_payment()`.
+   - `supabase-publish-update.sql` — RLS update so authenticated staff can create locations and apartments from the app.
+   - `supabase-refactor.sql` — `update_booking_status()` and the booking-overlap exclusion constraint.
+
+   See [docs/database.md](docs/database.md) for the full schema reference.
 
 5. Start development:
 
    ```bash
    npm run dev
    ```
+
+## Tests
+
+```bash
+npm run test       # run once
+npm run test:watch # watch mode
+npm run lint
+```
+
+See [docs/architecture.md](docs/architecture.md) for the codebase layout and conventions.
 
 ## Production Build
 
