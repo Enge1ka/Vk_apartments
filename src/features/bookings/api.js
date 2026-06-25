@@ -31,6 +31,12 @@ const SEARCH_SELECT = `
   apartment:apartments(apartment_number, location:locations(name))
 `
 
+const CALENDAR_SELECT = `
+  id, booking_reference, check_in_date, check_out_date, booking_status,
+  client:clients(full_name),
+  apartment:apartments(apartment_number, location_id, location:locations(id, name))
+`
+
 export async function listBookings(filters = {}) {
   let aptIds = null
   if (filters.locationId) {
@@ -41,6 +47,23 @@ export async function listBookings(filters = {}) {
   let query = supabase.from('bookings').select(LIST_SELECT).order('created_at', { ascending: false })
   if (filters.status) query = query.eq('booking_status', filters.status)
   if (filters.paymentStatus) query = query.eq('payment_status', filters.paymentStatus)
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
+}
+
+// Non-cancelled bookings shaped for the calendar view (a flat location_id on
+// the apartment, since the calendar colors events by location).
+export async function listBookingsForCalendar(locationId) {
+  let aptIds = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase.from('bookings').select(CALENDAR_SELECT).neq('booking_status', BOOKING_STATUS.CANCELLED)
   if (aptIds) query = query.in('apartment_id', aptIds)
 
   const { data, error } = await query

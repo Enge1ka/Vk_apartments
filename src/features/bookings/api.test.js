@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/shared/lib/supabase'
 import * as clientsApi from '@/features/clients/api'
-import { cancelBooking, createBooking, hasOverlappingBooking, updateBookingStatus } from './api'
+import * as apartmentsApi from '@/features/apartments/api'
+import { cancelBooking, createBooking, hasOverlappingBooking, listBookingsForCalendar, updateBookingStatus } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -71,6 +72,23 @@ describe('hasOverlappingBooking', () => {
     supabase.from.mockReturnValue(chain)
 
     await expect(hasOverlappingBooking('apt-1', '2026-01-01', '2026-01-04')).resolves.toBe(false)
+  })
+})
+
+describe('listBookingsForCalendar', () => {
+  it('excludes cancelled bookings and is unscoped without a location', async () => {
+    const chain = { select: () => chain, neq: vi.fn(() => Promise.resolve({ data: [{ id: 'b1' }], error: null })) }
+    supabase.from.mockReturnValue(chain)
+
+    const result = await listBookingsForCalendar(null)
+    expect(chain.neq).toHaveBeenCalledWith('booking_status', 'cancelled')
+    expect(result).toEqual([{ id: 'b1' }])
+  })
+
+  it('short-circuits when the location has no apartments', async () => {
+    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
+    await expect(listBookingsForCalendar('loc-1')).resolves.toEqual([])
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 })
 
