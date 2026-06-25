@@ -1,75 +1,40 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/shared/lib/supabase'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { Badge } from '@/shared/ui/Badge'
 import { Button } from '@/shared/ui/Button'
 import { Input } from '@/shared/ui/Input'
 import { Select } from '@/shared/ui/Select'
+import { Label } from '@/shared/ui/Label'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import { useAuth } from '@/features/auth/useAuth'
+import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
+import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_STATUS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import { Plus, Search, BedDouble } from 'lucide-react'
+import { listBookings } from '../api'
 
-const statusBadge = {
-  confirmed: { variant: 'info', label: 'Confirmed' },
-  checked_in: { variant: 'purple', label: 'Checked In' },
-  checked_out: { variant: 'default', label: 'Checked Out' },
-  cancelled: { variant: 'danger', label: 'Cancelled' },
-}
-
-const paymentBadge = {
-  unpaid: { variant: 'danger', label: 'Unpaid' },
-  partial: { variant: 'warning', label: 'Partial' },
-  paid: { variant: 'success', label: 'Paid' },
-}
-
-export default function Bookings() {
+export default function BookingsPage() {
   const { isRestricted, locationId } = useAuth()
-  const [bookings, setBookings] = useState([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPayment, setFilterPayment] = useState('')
 
-  useEffect(() => { fetchBookings() }, [isRestricted, locationId])
+  const { data: bookings, loading } = useSupabaseQuery(async () => {
+    if (isRestricted && !locationId) return []
+    return listBookings({
+      status: filterStatus || undefined,
+      paymentStatus: filterPayment || undefined,
+      locationId: isRestricted ? locationId : undefined,
+    })
+  }, [isRestricted, locationId, filterStatus, filterPayment])
 
-  async function fetchBookings() {
-    setLoading(true)
-
-    let aptIds = null
-    if (isRestricted && locationId) {
-      const { data: apts } = await supabase.from('apartments').select('id').eq('location_id', locationId)
-      aptIds = (apts || []).map(a => a.id)
-      if (aptIds.length === 0) { setBookings([]); setLoading(false); return }
-    }
-
-    let query = supabase
-      .from('bookings')
-      .select(`
-        id, booking_reference, check_in_date, check_out_date,
-        total_amount, amount_paid, outstanding_balance,
-        booking_status, payment_status,
-        client:clients(full_name, phone),
-        apartment:apartments(apartment_number, type, location:locations(name))
-      `)
-      .order('created_at', { ascending: false })
-
-    if (aptIds) query = query.in('apartment_id', aptIds)
-
-    const { data } = await query
-    setBookings(data || [])
-    setLoading(false)
-  }
-
-  const filtered = bookings.filter(b => {
+  const filtered = (bookings ?? []).filter(b => {
     const q = search.toLowerCase()
     const matchSearch = !search ||
       b.booking_reference?.toLowerCase().includes(q) ||
       b.client?.full_name?.toLowerCase().includes(q) ||
       b.apartment?.apartment_number?.toLowerCase().includes(q)
-    const matchStatus = !filterStatus || b.booking_status === filterStatus
-    const matchPayment = !filterPayment || b.payment_status === filterPayment
-    return matchSearch && matchStatus && matchPayment
+    return matchSearch
   })
 
   return (
@@ -81,25 +46,27 @@ export default function Bookings() {
         </Link>
       </div>
 
-      {/* Filters */}
       <div className="space-y-2">
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <Input placeholder="Search by ref, client, apartment…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+          <Label htmlFor="booking-search" className="sr-only">Search bookings</Label>
+          <Input id="booking-search" placeholder="Search by ref, client, apartment…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <div className="flex gap-2">
-          <Select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="flex-1 h-10 text-xs">
+          <Label htmlFor="filter-booking-status" className="sr-only">Filter by booking status</Label>
+          <Select id="filter-booking-status" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="flex-1 h-10 text-xs">
             <option value="">All statuses</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="checked_in">Checked In</option>
-            <option value="checked_out">Checked Out</option>
-            <option value="cancelled">Cancelled</option>
+            <option value={BOOKING_STATUS.CONFIRMED}>Confirmed</option>
+            <option value={BOOKING_STATUS.CHECKED_IN}>Checked In</option>
+            <option value={BOOKING_STATUS.CHECKED_OUT}>Checked Out</option>
+            <option value={BOOKING_STATUS.CANCELLED}>Cancelled</option>
           </Select>
-          <Select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="flex-1 h-10 text-xs">
+          <Label htmlFor="filter-payment-status" className="sr-only">Filter by payment status</Label>
+          <Select id="filter-payment-status" value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="flex-1 h-10 text-xs">
             <option value="">All payments</option>
-            <option value="unpaid">Unpaid</option>
-            <option value="partial">Partial</option>
-            <option value="paid">Paid</option>
+            <option value={PAYMENT_STATUS.UNPAID}>Unpaid</option>
+            <option value={PAYMENT_STATUS.PARTIAL}>Partial</option>
+            <option value={PAYMENT_STATUS.PAID}>Paid</option>
           </Select>
         </div>
       </div>
@@ -115,8 +82,8 @@ export default function Bookings() {
       ) : (
         <div className="space-y-3">
           {filtered.map(b => {
-            const sb = statusBadge[b.booking_status] || { variant: 'default', label: b.booking_status }
-            const pb = paymentBadge[b.payment_status] || { variant: 'default', label: b.payment_status }
+            const sb = getBadge(BOOKING_STATUS_BADGE, b.booking_status)
+            const pb = getBadge(PAYMENT_STATUS_BADGE, b.payment_status)
             return (
               <Link key={b.id} to={`/bookings/${b.id}`}>
                 <Card className="hover:shadow-md transition-shadow">

@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '@/shared/lib/supabase'
 import { useAuth } from '@/features/auth/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Badge } from '@/shared/ui/Badge'
@@ -13,168 +12,35 @@ import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import { downloadReceipt, shareReceiptWhatsApp } from '@/shared/lib/receiptGenerator'
 import { AlertTriangle, ChevronLeft, Download, Share2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
+import { cancelBooking, updateBookingStatus } from '../api'
+import { recordPayment } from '@/features/payments/api'
+import { validatePaymentAmount } from '@/features/payments/validators'
+import { validateCancellationReason } from '../validators'
+import { useBookingDetail } from '../useBookingDetail'
 
-const statusBadge = {
-  confirmed: { variant: 'info', label: 'Confirmed' },
-  checked_in: { variant: 'purple', label: 'Checked In' },
-  checked_out: { variant: 'default', label: 'Checked Out' },
-  cancelled: { variant: 'danger', label: 'Cancelled' },
-}
-
-export default function BookingDetail() {
+export default function BookingDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user, isAdmin, isRestricted, locationId, authReady } = useAuth()
-  const [booking, setBooking] = useState(null)
-  const [payments, setPayments] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { booking, payments, accessDenied, loading, refetch } = useBookingDetail(id, { isRestricted, locationId, authReady })
+
   const [payDialog, setPayDialog] = useState(false)
   const [statusDialog, setStatusDialog] = useState(false)
   const [cancelDialog, setCancelDialog] = useState(false)
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'cash' })
+  const [payError, setPayError] = useState(null)
   const [newStatus, setNewStatus] = useState('')
   const [cancelReason, setCancelReason] = useState('')
+  const [cancelError, setCancelError] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { if (authReady) fetchAll() }, [id, authReady])
+  useEffect(() => {
+    if (accessDenied) navigate('/bookings')
+  }, [accessDenied, navigate])
 
-  async function fetchAll() {
-    setLoading(true)
-
-    // Fetch booking first so we can enforce location scoping before loading payments.
-    const bookRes = await supabase.from('bookings').select(`
-      *, client:clients(*), apartment:apartments(*, location:locations(*))
-    `).eq('id', id).single()
-
-    const b = bookRes.data
-    // Restricted staff can only access bookings belonging to their assigned location.
-    if (b && isRestricted && locationId && b.apartment?.location?.id !== locationId) {
-      navigate('/bookings')
-      return
-    }
-
-    const payRes = await supabase.from('payments').select('*').eq('booking_id', id).order('created_at')
-    setBooking(b)
-    setPayments(payRes.data || [])
-    setLoading(false)
-  }
-
-  async function recordPayment() {
-    if (!payForm.amount || Number(payForm.amount) <= 0) { toast.error('Enter a valid amount'); return }
-    if (Number(payForm.amount) > Number(booking.outstanding_balance || 0)) {
-      toast.error('Payment cannot exceed the outstanding balance')
-      return
-    }
-    setSaving(true)
-
-    const { data, error } = await supabase.rpc('record_payment', {
-      p_booking_id:     id,
-      p_amount:         Number(payForm.amount),
-      p_payment_date:   new Date().toISOString().split('T')[0],
-      p_payment_method: payForm.payment_method,
-    })
-
-    if (error) { toast.error(error.message); setSaving(false); return }
-
-    const receiptNum = data.receipt_number
-    toast.success(`Payment recorded — ${receiptNum}`)
-    downloadReceipt({
-      receiptNumber: receiptNum,
-      paymentDate: new Date().toISOString().split('T')[0],
-      clientName: booking.client?.full_name,
-      clientPhone: booking.client?.phone,
-      clientNRC: booking.client?.nrc_or_passport,
-      apartmentNumber: booking.apartment?.apartment_number,
-      location: booking.apartment?.location?.name,
-      checkIn: booking.check_in_date,
-      checkOut: booking.check_out_date,
-      numberOfDays: booking.number_of_days,
-      ratePerDay: booking.rate_per_day,
-      totalAmount: booking.total_amount,
-      amountPaid: Number(payForm.amount),
-      outstandingBalance: (booking.outstanding_balance || 0) - Number(payForm.amount),
-      paymentMethod: payForm.payment_method,
-      staffName: user?.email,
-      bookingRef: booking.booking_reference,
-    })
-    setPayDialog(false)
-    setPayForm({ amount: '', payment_method: 'cash' })
-    fetchAll()
-    setSaving(false)
-  }
-
-  async function updateStatus() {
-    if (!newStatus) return
-    if (newStatus === 'checked_out' && booking.outstanding_balance > 0) {
-      const confirmed = window.confirm(`Client has outstanding balance of ${formatCurrency(booking.outstanding_balance)}. Proceed with checkout?`)
-      if (!confirmed) return
-    }
-    setSaving(true)
-    const updates = { booking_status: newStatus }
-    if (newStatus === 'checked_in') updates.apartment_status = 'occupied'
-    if (newStatus === 'checked_out' || newStatus === 'cancelled') {
-      await supabase.from('apartments').update({ status: 'available' }).eq('id', booking.apartment_id)
-    }
-    if (newStatus === 'checked_in') {
-      await supabase.from('apartments').update({ status: 'occupied' }).eq('id', booking.apartment_id)
-    }
-    await supabase.from('bookings').update({ booking_status: newStatus }).eq('id', id)
-    toast.success('Status updated')
-    setStatusDialog(false)
-    fetchAll()
-    setSaving(false)
-  }
-
-  async function cancelBooking() {
-    const reason = cancelReason.trim()
-    if (!reason) {
-      toast.error('Enter a cancellation reason')
-      return
-    }
-
-    const confirmed = window.confirm(
-      'Cancel this booking and release the apartment? Payment history will be kept for audit.'
-    )
-    if (!confirmed) return
-
-    setSaving(true)
-
-    const notes = [
-      booking.notes,
-      `Cancelled on ${new Date().toISOString().split('T')[0]} by ${user?.email || 'staff'}: ${reason}`,
-    ].filter(Boolean).join('\n')
-
-    const { error: bookingError } = await supabase
-      .from('bookings')
-      .update({ booking_status: 'cancelled', notes })
-      .eq('id', id)
-
-    if (bookingError) {
-      toast.error(bookingError.message)
-      setSaving(false)
-      return
-    }
-
-    const { error: apartmentError } = await supabase
-      .from('apartments')
-      .update({ status: 'available' })
-      .eq('id', booking.apartment_id)
-
-    if (apartmentError) {
-      toast.error(apartmentError.message)
-      setSaving(false)
-      return
-    }
-
-    toast.success('Booking cancelled and apartment released')
-    setCancelDialog(false)
-    setCancelReason('')
-    fetchAll()
-    setSaving(false)
-  }
-
-  function handleDownloadReceipt(payment) {
-    downloadReceipt({
+  function receiptPayload(payment, amountPaid, outstandingBalance) {
+    return {
       receiptNumber: payment.receipt_number,
       paymentDate: payment.payment_date,
       clientName: booking.client?.full_name,
@@ -187,18 +53,100 @@ export default function BookingDetail() {
       numberOfDays: booking.number_of_days,
       ratePerDay: booking.rate_per_day,
       totalAmount: booking.total_amount,
-      amountPaid: payment.amount,
-      outstandingBalance: booking.outstanding_balance,
+      amountPaid,
+      outstandingBalance,
       paymentMethod: payment.payment_method,
       staffName: user?.email,
       bookingRef: booking.booking_reference,
-    })
+    }
+  }
+
+  async function handleRecordPayment() {
+    const { valid, value, error } = validatePaymentAmount(payForm.amount, booking.outstanding_balance)
+    if (!valid) {
+      setPayError(error)
+      return
+    }
+    setSaving(true)
+    try {
+      const data = await recordPayment({
+        bookingId: id,
+        amount: value,
+        paymentMethod: payForm.payment_method,
+        paymentDate: new Date().toISOString().split('T')[0],
+      })
+      toast.success(`Payment recorded — ${data.receipt_number}`)
+      downloadReceipt(receiptPayload(
+        { receipt_number: data.receipt_number, payment_date: new Date().toISOString().split('T')[0], payment_method: payForm.payment_method },
+        value,
+        (booking.outstanding_balance || 0) - value,
+      ))
+      setPayDialog(false)
+      setPayForm({ amount: '', payment_method: 'cash' })
+      setPayError(null)
+      refetch()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleUpdateStatus() {
+    if (!newStatus) return
+    if (newStatus === BOOKING_STATUS.CHECKED_OUT && booking.outstanding_balance > 0) {
+      const confirmed = window.confirm(`Client has outstanding balance of ${formatCurrency(booking.outstanding_balance)}. Proceed with checkout?`)
+      if (!confirmed) return
+    }
+    setSaving(true)
+    try {
+      await updateBookingStatus(id, newStatus)
+      toast.success('Status updated')
+      setStatusDialog(false)
+      refetch()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCancelBooking() {
+    const { valid, value, error } = validateCancellationReason(cancelReason)
+    if (!valid) {
+      setCancelError(error)
+      return
+    }
+    const confirmed = window.confirm('Cancel this booking and release the apartment? Payment history will be kept for audit.')
+    if (!confirmed) return
+
+    setSaving(true)
+    try {
+      await cancelBooking(id, value, user?.email, booking.notes)
+      toast.success('Booking cancelled and apartment released')
+      setCancelDialog(false)
+      setCancelReason('')
+      setCancelError(null)
+      refetch()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleDownloadReceipt(payment) {
+    downloadReceipt(receiptPayload(payment, payment.amount, booking.outstanding_balance))
+  }
+
+  function handleShareReceipt(payment) {
+    shareReceiptWhatsApp(receiptPayload(payment, payment.amount, booking.outstanding_balance), booking.client?.phone)
   }
 
   if (loading) return <div className="p-4 text-center text-gray-400 py-16">Loading…</div>
   if (!booking) return <div className="p-4 text-center text-gray-400 py-16">Booking not found</div>
 
-  const sb = statusBadge[booking.booking_status] || { variant: 'default', label: booking.booking_status }
+  const sb = getBadge(BOOKING_STATUS_BADGE, booking.booking_status)
 
   return (
     <div className="p-4 space-y-4">
@@ -212,7 +160,6 @@ export default function BookingDetail() {
         </div>
       </div>
 
-      {/* Client */}
       <Card>
         <CardHeader><CardTitle>Client</CardTitle></CardHeader>
         <CardContent className="space-y-1 text-sm pt-0">
@@ -223,7 +170,6 @@ export default function BookingDetail() {
         </CardContent>
       </Card>
 
-      {/* Apartment */}
       <Card>
         <CardHeader><CardTitle>Apartment</CardTitle></CardHeader>
         <CardContent className="space-y-1 text-sm pt-0">
@@ -233,7 +179,6 @@ export default function BookingDetail() {
         </CardContent>
       </Card>
 
-      {/* Financials */}
       <Card>
         <CardHeader><CardTitle>Payment Summary</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm pt-0">
@@ -241,28 +186,26 @@ export default function BookingDetail() {
           <Row label="Amount Paid" value={formatCurrency(booking.amount_paid)} />
           <Row label="Outstanding" value={formatCurrency(booking.outstanding_balance)} bold={booking.outstanding_balance > 0} />
           <div className="pt-1">
-            <Badge variant={booking.payment_status === 'paid' ? 'success' : booking.payment_status === 'partial' ? 'warning' : 'danger'}>
+            <Badge variant={getBadge(PAYMENT_STATUS_BADGE, booking.payment_status).variant}>
               {booking.payment_status?.toUpperCase()}
             </Badge>
           </div>
         </CardContent>
       </Card>
 
-      {/* Action buttons */}
       <div className="grid grid-cols-2 gap-3">
         <Button variant="outline" onClick={() => setStatusDialog(true)}>Update Status</Button>
-        <Button onClick={() => setPayDialog(true)} disabled={booking.booking_status === 'cancelled'}>
+        <Button onClick={() => setPayDialog(true)} disabled={booking.booking_status === BOOKING_STATUS.CANCELLED}>
           <Plus size={16} /> Record Payment
         </Button>
       </div>
 
-      {isAdmin && booking.booking_status !== 'cancelled' && (
+      {isAdmin && booking.booking_status !== BOOKING_STATUS.CANCELLED && (
         <Button variant="destructive" className="w-full" onClick={() => setCancelDialog(true)}>
           <AlertTriangle size={16} /> Cancel / Reverse Booking
         </Button>
       )}
 
-      {/* Payments history */}
       {payments.length > 0 && (
         <Card>
           <CardHeader><CardTitle>Payment History</CardTitle></CardHeader>
@@ -275,10 +218,10 @@ export default function BookingDetail() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-green-600">{formatCurrency(p.amount)}</span>
-                  <button onClick={() => handleDownloadReceipt(p)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                  <button onClick={() => handleDownloadReceipt(p)} aria-label="Download receipt" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
                     <Download size={16} />
                   </button>
-                  <button onClick={() => shareReceiptWhatsApp({ ...p, clientName: booking.client?.full_name, apartmentNumber: booking.apartment?.apartment_number, location: booking.apartment?.location?.name, checkIn: booking.check_in_date, checkOut: booking.check_out_date, totalAmount: booking.total_amount, outstandingBalance: booking.outstanding_balance, bookingRef: booking.booking_reference, receiptNumber: p.receipt_number, amountPaid: p.amount, paymentDate: p.payment_date, paymentMethod: p.payment_method }, booking.client?.phone)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                  <button onClick={() => handleShareReceipt(p)} aria-label="Share receipt on WhatsApp" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
                     <Share2 size={16} />
                   </button>
                 </div>
@@ -288,7 +231,6 @@ export default function BookingDetail() {
         </Card>
       )}
 
-      {/* Record Payment Dialog */}
       <Dialog open={payDialog} onClose={() => setPayDialog(false)}>
         <DialogHeader onClose={() => setPayDialog(false)}>
           <DialogTitle>Record Payment</DialogTitle>
@@ -298,54 +240,50 @@ export default function BookingDetail() {
             Outstanding: <strong>{formatCurrency(booking.outstanding_balance)}</strong>
           </div>
           <div>
-            <Label>Amount (ZMW)</Label>
-            <Input type="number" min="1" placeholder="0.00"
-              value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
+            <Label htmlFor="payment-amount">Amount (ZMW)</Label>
+            <Input id="payment-amount" type="number" min="1" placeholder="0.00"
+              value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} aria-invalid={!!payError} />
+            {payError && <p className="text-xs text-red-500 mt-1">{payError}</p>}
           </div>
           <div>
-            <Label>Payment Method</Label>
-            <Select value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>
-              <option value="cash">Cash</option>
-              <option value="mobile_money">Mobile Money</option>
-              <option value="bank_transfer">Bank Transfer</option>
-              <option value="card">Card</option>
+            <Label htmlFor="payment-method">Payment Method</Label>
+            <Select id="payment-method" value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>
+              {PAYMENT_METHOD_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </Select>
           </div>
         </DialogContent>
         <DialogFooter>
           <Button variant="outline" className="flex-1" onClick={() => setPayDialog(false)}>Cancel</Button>
-          <Button className="flex-1" onClick={recordPayment} disabled={saving}>
+          <Button className="flex-1" onClick={handleRecordPayment} disabled={saving}>
             {saving ? 'Saving…' : 'Save Payment'}
           </Button>
         </DialogFooter>
       </Dialog>
 
-      {/* Update Status Dialog */}
       <Dialog open={statusDialog} onClose={() => setStatusDialog(false)}>
         <DialogHeader onClose={() => setStatusDialog(false)}>
           <DialogTitle>Update Booking Status</DialogTitle>
         </DialogHeader>
         <DialogContent className="space-y-3">
           <div>
-            <Label>New Status</Label>
-            <Select value={newStatus} onChange={e => setNewStatus(e.target.value)}>
+            <Label htmlFor="new-status">New Status</Label>
+            <Select id="new-status" value={newStatus} onChange={e => setNewStatus(e.target.value)}>
               <option value="">Select…</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="checked_in">Checked In</option>
-              <option value="checked_out">Checked Out</option>
-              {isAdmin && <option value="cancelled">Cancelled</option>}
+              <option value={BOOKING_STATUS.CONFIRMED}>Confirmed</option>
+              <option value={BOOKING_STATUS.CHECKED_IN}>Checked In</option>
+              <option value={BOOKING_STATUS.CHECKED_OUT}>Checked Out</option>
+              {isAdmin && <option value={BOOKING_STATUS.CANCELLED}>Cancelled</option>}
             </Select>
           </div>
         </DialogContent>
         <DialogFooter>
           <Button variant="outline" className="flex-1" onClick={() => setStatusDialog(false)}>Cancel</Button>
-          <Button className="flex-1" onClick={updateStatus} disabled={saving || !newStatus}>
+          <Button className="flex-1" onClick={handleUpdateStatus} disabled={saving || !newStatus}>
             {saving ? 'Updating…' : 'Update'}
           </Button>
         </DialogFooter>
       </Dialog>
 
-      {/* Cancel Booking Dialog */}
       <Dialog open={cancelDialog} onClose={() => setCancelDialog(false)}>
         <DialogHeader onClose={() => setCancelDialog(false)}>
           <DialogTitle>Cancel / Reverse Booking</DialogTitle>
@@ -355,12 +293,15 @@ export default function BookingDetail() {
             This will mark the booking as cancelled and make the apartment available again. Existing payments and receipts stay saved for audit and refund tracking.
           </div>
           <div>
-            <Label>Cancellation Reason</Label>
+            <Label htmlFor="cancel-reason">Cancellation Reason</Label>
             <Input
+              id="cancel-reason"
               value={cancelReason}
               onChange={e => setCancelReason(e.target.value)}
               placeholder="Guest cancelled, duplicate booking, date change..."
+              aria-invalid={!!cancelError}
             />
+            {cancelError && <p className="text-xs text-red-500 mt-1">{cancelError}</p>}
           </div>
           {booking.amount_paid > 0 && (
             <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
@@ -370,7 +311,7 @@ export default function BookingDetail() {
         </DialogContent>
         <DialogFooter>
           <Button variant="outline" className="flex-1" onClick={() => setCancelDialog(false)}>Keep Booking</Button>
-          <Button variant="destructive" className="flex-1" onClick={cancelBooking} disabled={saving}>
+          <Button variant="destructive" className="flex-1" onClick={handleCancelBooking} disabled={saving}>
             {saving ? 'Cancelling...' : 'Cancel Booking'}
           </Button>
         </DialogFooter>

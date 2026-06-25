@@ -1,0 +1,126 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { supabase } from '@/shared/lib/supabase'
+import * as clientsApi from '@/features/clients/api'
+import * as paymentsApi from '@/features/payments/api'
+import { cancelBooking, createBooking, hasOverlappingBooking, updateBookingStatus } from './api'
+
+vi.mock('@/shared/lib/supabase', () => ({
+  supabase: { from: vi.fn(), rpc: vi.fn() },
+}))
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+function mockBookingInsert(result) {
+  supabase.from.mockImplementation((table) => {
+    if (table !== 'bookings') throw new Error(`Unexpected table: ${table}`)
+    return { insert: () => ({ select: () => ({ single: () => Promise.resolve(result) }) }) }
+  })
+}
+
+describe('createBooking', () => {
+  const args = {
+    client: { full_name: 'John Banda', phone: '0970000000' },
+    apartmentId: 'apt-1',
+    checkInDate: '2026-01-01',
+    checkOutDate: '2026-01-04',
+    ratePerDay: 100,
+    totalAmount: 300,
+    createdBy: 'user-1',
+    amountToPay: 0,
+    paymentMethod: 'cash',
+  }
+
+  it('creates a booking, finding or creating the client and generating a reference', async () => {
+    vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
+    supabase.rpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null })
+    mockBookingInsert({ data: { id: 'booking-1' }, error: null })
+
+    const result = await createBooking(args)
+
+    expect(result).toEqual({ bookingId: 'booking-1', bookingRef: 'VKL-2026-0001', payment: null })
+    expect(clientsApi.findOrCreateClient).toHaveBeenCalledWith(args.client)
+    expect(supabase.rpc).toHaveBeenCalledWith('next_booking_ref')
+  })
+
+  it('records the initial payment when amountToPay > 0', async () => {
+    vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
+    vi.spyOn(paymentsApi, 'recordPayment').mockResolvedValue({ receipt_number: 'RCP-2026-0001' })
+    supabase.rpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null })
+    mockBookingInsert({ data: { id: 'booking-1' }, error: null })
+
+    const result = await createBooking({ ...args, amountToPay: 150 })
+
+    expect(paymentsApi.recordPayment).toHaveBeenCalledWith({
+      bookingId: 'booking-1', amount: 150, paymentMethod: 'cash',
+    })
+    expect(result.payment).toEqual({ receipt_number: 'RCP-2026-0001' })
+  })
+
+  it('translates a DB exclusion-violation into a friendly overlap message', async () => {
+    vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
+    supabase.rpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null })
+    mockBookingInsert({ data: null, error: { code: '23P01', message: 'exclusion violation' } })
+
+    await expect(createBooking(args)).rejects.toThrow(/already booked for those dates/)
+  })
+
+  it('still surfaces the booking id when the booking succeeds but payment fails', async () => {
+    vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
+    vi.spyOn(paymentsApi, 'recordPayment').mockRejectedValue(new Error('insufficient'))
+    supabase.rpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null })
+    mockBookingInsert({ data: { id: 'booking-1' }, error: null })
+
+    await expect(createBooking({ ...args, amountToPay: 150 })).rejects.toMatchObject({
+      bookingId: 'booking-1',
+      message: expect.stringMatching(/payment failed/),
+    })
+  })
+})
+
+describe('hasOverlappingBooking', () => {
+  it('returns true when a non-cancelled booking overlaps the date range', async () => {
+    const chain = {
+      select: () => chain, eq: () => chain, neq: () => chain, lt: () => chain,
+      gt: () => Promise.resolve({ data: [{ id: 'existing' }], error: null }),
+    }
+    supabase.from.mockReturnValue(chain)
+
+    await expect(hasOverlappingBooking('apt-1', '2026-01-01', '2026-01-04')).resolves.toBe(true)
+  })
+
+  it('returns false when there is no overlap', async () => {
+    const chain = {
+      select: () => chain, eq: () => chain, neq: () => chain, lt: () => chain,
+      gt: () => Promise.resolve({ data: [], error: null }),
+    }
+    supabase.from.mockReturnValue(chain)
+
+    await expect(hasOverlappingBooking('apt-1', '2026-01-01', '2026-01-04')).resolves.toBe(false)
+  })
+})
+
+describe('updateBookingStatus / cancelBooking', () => {
+  it('calls the update_booking_status RPC with the new status', async () => {
+    supabase.rpc.mockResolvedValue({ data: null, error: null })
+    await updateBookingStatus('booking-1', 'checked_in')
+    expect(supabase.rpc).toHaveBeenCalledWith('update_booking_status', {
+      p_booking_id: 'booking-1', p_new_status: 'checked_in',
+    })
+  })
+
+  it('cancelBooking appends a cancellation note and sets status to cancelled', async () => {
+    supabase.rpc.mockResolvedValue({ data: null, error: null })
+    await cancelBooking('booking-1', 'Guest cancelled', 'staff@vk.com', 'Existing note')
+
+    expect(supabase.rpc).toHaveBeenCalledWith('update_booking_status', expect.objectContaining({
+      p_booking_id: 'booking-1',
+      p_new_status: 'cancelled',
+      p_notes: expect.stringContaining('Existing note'),
+    }))
+    const callArgs = supabase.rpc.mock.calls.at(-1)[1]
+    expect(callArgs.p_notes).toContain('Guest cancelled')
+    expect(callArgs.p_notes).toContain('staff@vk.com')
+  })
+})

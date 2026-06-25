@@ -11,9 +11,9 @@ import ResetPassword from '@/features/auth/components/ResetPassword'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const Apartments = lazy(() => import('@/features/apartments/components/ApartmentsPage'))
-const Bookings = lazy(() => import('@/pages/Bookings'))
-const BookingDetail = lazy(() => import('@/pages/BookingDetail'))
-const NewBooking = lazy(() => import('@/pages/NewBooking'))
+const Bookings = lazy(() => import('@/features/bookings/components/BookingsPage'))
+const BookingDetail = lazy(() => import('@/features/bookings/components/BookingDetailPage'))
+const NewBooking = lazy(() => import('@/features/bookings/components/NewBookingPage'))
 const Payments = lazy(() => import('@/pages/Payments'))
 const CalendarPage = lazy(() => import('@/pages/CalendarPage'))
 const Reports = lazy(() => import('@/pages/Reports'))

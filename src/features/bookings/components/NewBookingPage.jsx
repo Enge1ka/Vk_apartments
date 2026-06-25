@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/shared/lib/supabase'
 import { useAuth } from '@/features/auth/useAuth'
 import { Button } from '@/shared/ui/Button'
 import { Input } from '@/shared/ui/Input'
@@ -11,20 +10,26 @@ import { formatCurrency, calcDays, calcTotal } from '@/shared/lib/bookingUtils'
 import { downloadReceipt } from '@/shared/lib/receiptGenerator'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { APARTMENT_STATUS, PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
+import { listApartments } from '@/features/apartments/api'
+import { listLocations } from '@/features/locations/api'
+import { createBooking, hasOverlappingBooking } from '../api'
+import { validateApartmentStep, validateClientStep, validateInitialPayment } from '../validators'
 
 const STEPS = ['Client', 'Apartment', 'Payment', 'Confirm']
 
 const EMPTY = {
   full_name: '', nrc_or_passport: '', phone: '', email: '', company: '',
   location_id: '', apartment_id: '', check_in_date: '', check_out_date: '',
-  rate_per_day: '', amount_to_pay: '', payment_method: 'cash', notes: '',
+  rate_per_day: '', amount_to_pay: '', payment_method: PAYMENT_METHOD.CASH, notes: '',
 }
 
-export default function NewBooking() {
+export default function NewBookingPage() {
   const { user, isRestricted, locationId } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [form, setForm] = useState(EMPTY)
+  const [errors, setErrors] = useState({})
   const [locations, setLocations] = useState([])
   const [apartments, setApartments] = useState([])
   const [saving, setSaving] = useState(false)
@@ -34,30 +39,25 @@ export default function NewBooking() {
   const outstandingBalance = totalAmount - (Number(form.amount_to_pay) || 0)
 
   useEffect(() => {
-    let q = supabase.from('locations').select('*').order('name')
-    if (isRestricted && locationId) q = q.eq('id', locationId)
-    q.then(({ data }) => {
-      setLocations(data || [])
+    listLocations().then(allLocations => {
+      const scoped = isRestricted && locationId ? allLocations.filter(l => l.id === locationId) : allLocations
+      setLocations(scoped)
       if (isRestricted && locationId) set('location_id', locationId)
     })
   }, [isRestricted, locationId])
 
   useEffect(() => {
-    if (!form.location_id) { setApartments([]); return }
-    supabase
-      .from('apartments')
-      .select('*')
-      .eq('location_id', form.location_id)
-      .eq('status', 'available')
-      .order('apartment_number')
-      .then(({ data }) => setApartments(data || []))
+    const apartmentsForLocation = form.location_id
+      ? listApartments({ locationId: form.location_id, status: APARTMENT_STATUS.AVAILABLE })
+      : Promise.resolve([])
+    apartmentsForLocation.then(setApartments)
   }, [form.location_id])
 
   useEffect(() => {
     if (!form.apartment_id) return
     const apt = apartments.find(a => a.id === form.apartment_id)
     if (apt) set('rate_per_day', apt.daily_rate)
-  }, [form.apartment_id])
+  }, [form.apartment_id, apartments])
 
   function set(key, val) {
     setForm(f => ({ ...f, [key]: val }))
@@ -69,17 +69,21 @@ export default function NewBooking() {
 
   function validateStep() {
     if (step === 0) {
-      if (!form.full_name || !form.phone) { toast.error('Name and phone are required'); return false }
+      const result = validateClientStep(form)
+      setErrors(result.errors)
+      if (!result.valid) toast.error('Name and phone are required')
+      return result.valid
     }
     if (step === 1) {
-      if (!form.location_id || !form.apartment_id || !form.check_in_date || !form.check_out_date) {
-        toast.error('Select apartment and dates'); return false
-      }
-      if (days <= 0) { toast.error('Check-out must be after check-in'); return false }
+      const result = validateApartmentStep(form)
+      setErrors(result.errors)
+      if (!result.valid) toast.error(Object.values(result.errors)[0])
+      return result.valid
     }
     if (step === 2) {
-      if (Number(form.amount_to_pay) < 0) { toast.error('Payment cannot be negative'); return false }
-      if (Number(form.amount_to_pay) > totalAmount) { toast.error('Payment cannot exceed total amount'); return false }
+      const result = validateInitialPayment(form.amount_to_pay, totalAmount)
+      if (!result.valid) toast.error(result.error)
+      return result.valid
     }
     return true
   }
@@ -91,85 +95,48 @@ export default function NewBooking() {
     if (!validateStep()) return
     setSaving(true)
 
-    // Check for overlapping bookings
-    const { data: conflicts } = await supabase
-      .from('bookings')
-      .select('id')
-      .eq('apartment_id', form.apartment_id)
-      .neq('booking_status', 'cancelled')
-      .lt('check_in_date', form.check_out_date)
-      .gt('check_out_date', form.check_in_date)
-
-    if (conflicts && conflicts.length > 0) {
+    const overlapping = await hasOverlappingBooking(form.apartment_id, form.check_in_date, form.check_out_date)
+    if (overlapping) {
       toast.error('This apartment is already booked for those dates. Please choose different dates or another apartment.')
       setSaving(false)
       return
     }
 
-    // Generate booking reference atomically via DB sequence (collision-safe).
-    const { data: bookingRef, error: refErr } = await supabase.rpc('next_booking_ref')
-    if (refErr) { toast.error('Failed to generate booking reference'); setSaving(false); return }
-
-    // Upsert client
-    let clientId
-    const { data: existingClient } = await supabase
-      .from('clients').select('id').eq('phone', form.phone).maybeSingle()
-
-    if (existingClient) {
-      clientId = existingClient.id
-    } else {
-      const { data: newClient, error: clientErr } = await supabase.from('clients').insert({
-        full_name: form.full_name,
-        nrc_or_passport: form.nrc_or_passport || null,
-        phone: form.phone,
-        email: form.email || null,
-        company: form.company || null,
-      }).select('id').single()
-      if (clientErr) { toast.error('Failed to save client'); setSaving(false); return }
-      clientId = newClient.id
-    }
-
     const amountPaid = Number(form.amount_to_pay) || 0
 
-    // Insert booking with amount_paid: 0; the RPC below applies the payment
-    // atomically so it is never counted twice.
-    const { data: booking, error: bookErr } = await supabase.from('bookings').insert({
-      booking_reference: bookingRef,
-      client_id: clientId,
-      apartment_id: form.apartment_id,
-      check_in_date: form.check_in_date,
-      check_out_date: form.check_out_date,
-      rate_per_day: Number(form.rate_per_day),
-      total_amount: totalAmount,
-      amount_paid: 0,
-      payment_status: 'unpaid',
-      booking_status: 'confirmed',
-      notes: form.notes || null,
-      created_by: user?.id,
-    }).select('id').single()
-
-    if (bookErr) { toast.error('Failed to create booking'); setSaving(false); return }
-
-    // Record payment atomically via RPC — prevents partial saves and race conditions.
-    if (amountPaid > 0) {
-      const { data: payResult, error: payErr } = await supabase.rpc('record_payment', {
-        p_booking_id:     booking.id,
-        p_amount:         amountPaid,
-        p_payment_date:   new Date().toISOString().split('T')[0],
-        p_payment_method: form.payment_method,
+    let result
+    try {
+      result = await createBooking({
+        client: {
+          full_name: form.full_name,
+          phone: form.phone,
+          nrc_or_passport: form.nrc_or_passport,
+          email: form.email,
+          company: form.company,
+        },
+        apartmentId: form.apartment_id,
+        checkInDate: form.check_in_date,
+        checkOutDate: form.check_out_date,
+        ratePerDay: Number(form.rate_per_day),
+        totalAmount,
+        notes: form.notes,
+        createdBy: user?.id,
+        amountToPay: amountPaid,
+        paymentMethod: form.payment_method,
       })
+    } catch (err) {
+      setSaving(false)
+      toast.error(err.message)
+      // The booking itself was created; only the payment failed. Route the
+      // user there instead of leaving them on a form with no way back to it.
+      if (err.bookingId) navigate(`/bookings/${err.bookingId}`)
+      return
+    }
 
-      if (payErr) {
-        // Booking exists but payment failed — it stays unpaid so staff can re-record it.
-        toast.error('Booking created but payment failed. Please record the payment from the booking page.')
-        navigate(`/bookings/${booking.id}`)
-        setSaving(false)
-        return
-      }
-
+    if (result.payment) {
       const apt = apartments.find(a => a.id === form.apartment_id)
       downloadReceipt({
-        receiptNumber: payResult.receipt_number,
+        receiptNumber: result.payment.receipt_number,
         paymentDate: new Date().toISOString().split('T')[0],
         clientName: form.full_name,
         clientPhone: form.phone,
@@ -185,19 +152,19 @@ export default function NewBooking() {
         outstandingBalance: totalAmount - amountPaid,
         paymentMethod: form.payment_method,
         staffName: user?.email,
-        bookingRef,
+        bookingRef: result.bookingRef,
       })
     }
 
-    toast.success(`Booking ${bookingRef} created!`)
-    navigate(`/bookings/${booking.id}`)
+    setSaving(false)
+    toast.success(`Booking ${result.bookingRef} created!`)
+    navigate(`/bookings/${result.bookingId}`)
   }
 
   const selectedApt = apartments.find(a => a.id === form.apartment_id)
 
   return (
     <div className="p-4 space-y-4">
-      {/* Header */}
       <div className="flex items-center gap-3 pt-2">
         <button onClick={() => navigate('/bookings')} className="p-2 rounded-xl hover:bg-gray-100">
           <ChevronLeft size={20} />
@@ -205,7 +172,6 @@ export default function NewBooking() {
         <h1 className="text-xl font-bold text-gray-900">New Booking</h1>
       </div>
 
-      {/* Step indicator */}
       <div className="flex items-center gap-1">
         {STEPS.map((s, i) => (
           <div key={s} className="flex items-center flex-1">
@@ -218,50 +184,50 @@ export default function NewBooking() {
         ))}
       </div>
 
-      {/* Step 0: Client */}
       {step === 0 && (
         <Card>
           <CardContent className="space-y-3 pt-4">
             <h2 className="font-semibold text-gray-800">Client Details</h2>
             <div>
-              <Label>Full Name *</Label>
-              <Input placeholder="John Banda" {...field('full_name')} />
+              <Label htmlFor="nb-full-name">Full Name *</Label>
+              <Input id="nb-full-name" placeholder="John Banda" {...field('full_name')} aria-invalid={!!errors.full_name} />
+              {errors.full_name && <p className="text-xs text-red-500 mt-1">{errors.full_name}</p>}
             </div>
             <div>
-              <Label>Phone Number *</Label>
-              <Input type="tel" placeholder="+260 97 000 0000" {...field('phone')} />
+              <Label htmlFor="nb-phone">Phone Number *</Label>
+              <Input id="nb-phone" type="tel" placeholder="+260 97 000 0000" {...field('phone')} aria-invalid={!!errors.phone} />
+              {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
             </div>
             <div>
-              <Label>NRC / Passport</Label>
-              <Input placeholder="123456/10/1" {...field('nrc_or_passport')} />
+              <Label htmlFor="nb-nrc">NRC / Passport</Label>
+              <Input id="nb-nrc" placeholder="123456/10/1" {...field('nrc_or_passport')} />
             </div>
             <div>
-              <Label>Email (optional)</Label>
-              <Input type="email" placeholder="client@example.com" {...field('email')} />
+              <Label htmlFor="nb-email">Email (optional)</Label>
+              <Input id="nb-email" type="email" placeholder="client@example.com" {...field('email')} />
             </div>
             <div>
-              <Label>Company (optional)</Label>
-              <Input placeholder="ABC Ltd" {...field('company')} />
+              <Label htmlFor="nb-company">Company (optional)</Label>
+              <Input id="nb-company" placeholder="ABC Ltd" {...field('company')} />
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Step 1: Apartment */}
       {step === 1 && (
         <Card>
           <CardContent className="space-y-3 pt-4">
             <h2 className="font-semibold text-gray-800">Apartment & Dates</h2>
             <div>
-              <Label>Location *</Label>
-              <Select {...field('location_id')} disabled={isRestricted}>
+              <Label htmlFor="nb-location">Location *</Label>
+              <Select id="nb-location" {...field('location_id')} disabled={isRestricted} aria-invalid={!!errors.location_id}>
                 <option value="">Select location…</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </Select>
             </div>
             <div>
-              <Label>Apartment *</Label>
-              <Select {...field('apartment_id')} disabled={!form.location_id}>
+              <Label htmlFor="nb-apartment">Apartment *</Label>
+              <Select id="nb-apartment" {...field('apartment_id')} disabled={!form.location_id} aria-invalid={!!errors.apartment_id}>
                 <option value="">Select apartment…</option>
                 {apartments.map(a => (
                   <option key={a.id} value={a.id}>
@@ -275,18 +241,19 @@ export default function NewBooking() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Check-in *</Label>
-                <Input type="date" {...field('check_in_date')} />
+                <Label htmlFor="nb-checkin">Check-in *</Label>
+                <Input id="nb-checkin" type="date" {...field('check_in_date')} aria-invalid={!!errors.check_in_date} />
               </div>
               <div>
-                <Label>Check-out *</Label>
-                <Input type="date" {...field('check_out_date')} />
+                <Label htmlFor="nb-checkout">Check-out *</Label>
+                <Input id="nb-checkout" type="date" {...field('check_out_date')} aria-invalid={!!errors.check_out_date} />
+                {errors.check_out_date && <p className="text-xs text-red-500 mt-1">{errors.check_out_date}</p>}
               </div>
             </div>
             {form.apartment_id && (
               <div>
-                <Label>Rate per Day (ZMW)</Label>
-                <Input type="number" min="0" step="0.01" placeholder="0.00" {...field('rate_per_day')} />
+                <Label htmlFor="nb-rate">Rate per Day (ZMW)</Label>
+                <Input id="nb-rate" type="number" min="0" step="0.01" placeholder="0.00" {...field('rate_per_day')} />
                 <p className="text-xs text-gray-400 mt-1">Pre-filled from apartment — edit to override</p>
               </div>
             )}
@@ -299,7 +266,6 @@ export default function NewBooking() {
         </Card>
       )}
 
-      {/* Step 2: Payment */}
       {step === 2 && (
         <Card>
           <CardContent className="space-y-3 pt-4">
@@ -308,28 +274,24 @@ export default function NewBooking() {
               <div className="flex justify-between"><span className="text-gray-500">Total amount</span><strong>{formatCurrency(totalAmount)}</strong></div>
             </div>
             <div>
-              <Label>Amount to Pay Now</Label>
-              <Input type="number" placeholder="0.00" min="0" max={totalAmount} {...field('amount_to_pay')} />
+              <Label htmlFor="nb-amount-to-pay">Amount to Pay Now</Label>
+              <Input id="nb-amount-to-pay" type="number" placeholder="0.00" min="0" max={totalAmount} {...field('amount_to_pay')} />
               <p className="text-xs text-gray-400 mt-1">Leave 0 to record as unpaid</p>
             </div>
             <div>
-              <Label>Payment Method</Label>
-              <Select {...field('payment_method')}>
-                <option value="cash">Cash</option>
-                <option value="mobile_money">Mobile Money</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="card">Card</option>
+              <Label htmlFor="nb-payment-method">Payment Method</Label>
+              <Select id="nb-payment-method" {...field('payment_method')}>
+                {PAYMENT_METHOD_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </Select>
             </div>
             <div>
-              <Label>Notes (optional)</Label>
-              <Input placeholder="Any notes…" {...field('notes')} />
+              <Label htmlFor="nb-notes">Notes (optional)</Label>
+              <Input id="nb-notes" placeholder="Any notes…" {...field('notes')} />
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Step 3: Confirm */}
       {step === 3 && (
         <Card>
           <CardContent className="space-y-3 pt-4">
@@ -355,7 +317,6 @@ export default function NewBooking() {
         </Card>
       )}
 
-      {/* Nav buttons */}
       <div className="flex gap-3">
         {step > 0 && (
           <Button variant="outline" className="flex-1" onClick={back}>

@@ -27,6 +27,15 @@ export async function updateApartment(id, payload) {
   if (error) throw error
 }
 
+// Resolves the apartment IDs for a location, used by every other feature
+// (bookings, payments, dashboard, reports, calendar) to scope queries on
+// tables that don't have a location_id of their own.
+export async function listApartmentIds(locationId) {
+  const { data, error } = await supabase.from('apartments').select('id').eq('location_id', locationId)
+  if (error) throw error
+  return (data ?? []).map(a => a.id)
+}
+
 // Subscribes to realtime apartment changes; returns an unsubscribe function.
 export function subscribeToApartmentChanges(onChange) {
   const channel = supabase
