@@ -3,6 +3,7 @@ import { useEffect, Suspense, lazy } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { useAuth } from '@/features/auth/useAuth'
 import { isSupabaseConfigured } from '@/shared/lib/supabase'
+import { initMonitoring } from '@/features/monitoring/init'
 import AppLayout from '@/components/AppLayout'
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute'
 import Login from '@/features/auth/components/Login'
@@ -64,6 +65,10 @@ export default function App() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {})
     }
+  }, [])
+
+  useEffect(() => {
+    if (isSupabaseConfigured) initMonitoring()
   }, [])
 
   return isSupabaseConfigured ? (

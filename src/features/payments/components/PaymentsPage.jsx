@@ -21,7 +21,7 @@ export default function PaymentsPage() {
   const { data: payments, loading, refetch } = useSupabaseQuery(async () => {
     if (isRestricted && !locationId) return []
     return listPayments({ locationId: isRestricted ? locationId : undefined })
-  }, [isRestricted, locationId])
+  }, [isRestricted, locationId], 'payments.listPayments')
 
   const [search, setSearch] = useState('')
   const [filterMethod, setFilterMethod] = useState('')

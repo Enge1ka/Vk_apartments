@@ -13,7 +13,7 @@ export function useBookingDetail(id, { isRestricted, locationId, authReady }) {
     if (accessDenied) return { booking: null, payments: [], accessDenied: true }
     const payments = await listPaymentsForBooking(id)
     return { booking, payments, accessDenied: false }
-  }, [id, authReady])
+  }, [id, authReady], 'bookings.getBookingAndPayments')
 
   return {
     booking: data?.booking ?? null,

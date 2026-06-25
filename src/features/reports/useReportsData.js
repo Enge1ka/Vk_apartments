@@ -21,7 +21,7 @@ export function useReportsData({ isRestricted, locationId, dateFrom, dateTo }) {
       occupancy: summarizeOccupancy(apartments),
       bookingSummary,
     }
-  }, [isRestricted, locationId, dateFrom, dateTo])
+  }, [isRestricted, locationId, dateFrom, dateTo], 'reports.loadAll')
 
   return {
     revenue: data?.revenue ?? { total: 0, byMethod: [], byLocation: [], byApartment: [], daily: [] },

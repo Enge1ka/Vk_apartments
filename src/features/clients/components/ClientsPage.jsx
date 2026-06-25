@@ -7,7 +7,7 @@ import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listClients } from '../api'
 
 export default function ClientsPage() {
-  const { data: clients, loading } = useSupabaseQuery(listClients, [])
+  const { data: clients, loading } = useSupabaseQuery(listClients, [], 'clients.listClients')
   const [search, setSearch] = useState('')
 
   const filtered = (clients ?? []).filter(c => {

@@ -12,8 +12,9 @@ import { Badge } from '@/shared/ui/Badge'
 import { Select } from '@/shared/ui/Select'
 import { Plus, MapPin, ClipboardList } from 'lucide-react'
 import toast from 'react-hot-toast'
+import PerformanceTab from '@/features/monitoring/components/PerformanceTab'
 
-const TABS = ['Users', 'Locations', 'Audit Log']
+const TABS = ['Users', 'Locations', 'Audit Log', 'Performance']
 
 export default function SettingsPage() {
   // Route-level access control: this page is only ever rendered inside
@@ -29,7 +30,7 @@ export default function SettingsPage() {
   const { data, refetch } = useSupabaseQuery(async () => {
     const [users, locations] = await Promise.all([listProfiles(), listLocations()])
     return { users, locations }
-  }, [])
+  }, [], 'settings.listUsersAndLocations')
 
   const users = data?.users ?? []
   const locations = data?.locations ?? []
@@ -161,6 +162,8 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      {tab === 'Performance' && <PerformanceTab />}
 
       <Dialog open={locDialog} onClose={() => setLocDialog(false)}>
         <DialogHeader onClose={() => setLocDialog(false)}>

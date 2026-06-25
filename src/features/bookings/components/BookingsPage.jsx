@@ -26,7 +26,7 @@ export default function BookingsPage() {
       paymentStatus: filterPayment || undefined,
       locationId: isRestricted ? locationId : undefined,
     })
-  }, [isRestricted, locationId, filterStatus, filterPayment])
+  }, [isRestricted, locationId, filterStatus, filterPayment], 'bookings.listBookings')
 
   const filtered = (bookings ?? []).filter(b => {
     const q = search.toLowerCase()

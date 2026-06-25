@@ -51,7 +51,7 @@ export function useDashboardData({ isRestricted, locationId }) {
       upcomingCheckOuts: checkOuts,
       recentPayments,
     }
-  }, [isRestricted, locationId])
+  }, [isRestricted, locationId], 'dashboard.loadAll')
 
   return {
     stats: data?.stats ?? { total: 0, occupied: 0, available: 0, maintenance: 0, todayRevenue: 0 },

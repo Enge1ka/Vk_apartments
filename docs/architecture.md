@@ -33,9 +33,12 @@ src/
     ui/                   Button, Card, Dialog, Input, Label, Select, Badge —
                            generic, feature-agnostic primitives.
     lib/                  supabase client, bookingUtils (formatting), cn,
-                           receiptGenerator.
+                           receiptGenerator, metrics.js (generic pub/sub —
+                           see "Performance monitoring" below).
     hooks/                useSupabaseQuery — the fetch/loading/error/refetch
-                           hook every feature's data-loading hook is built on.
+                           hook every feature's data-loading hook is built on;
+                           also times every query and emits the result via
+                           metrics.js.
     constants/            status.js — the single source of truth for booking/
                            payment/apartment status enums and their badge
                            variants (mirrors the DB CHECK constraints).
@@ -56,6 +59,7 @@ query it directly:
 | `clients` | `features/clients/api.js` |
 | `bookings` | `features/bookings/api.js` |
 | `payments` | `features/payments/api.js` |
+| `performance_metrics` | `features/monitoring/api.js` |
 
 Other features call into the owning feature's `api.js` rather than
 querying the table themselves — e.g. `payments/api.js` calls
@@ -97,6 +101,29 @@ workflow, not something either feature's data layer should own.
   `api.js`/`selectors.js`/hooks; components wire user interaction to those
   functions and render the result.
 
+## Performance monitoring
+
+`shared/lib/metrics.js` is a tiny, generic pub/sub (`emitMetric`/`onMetric`)
+— it has to live in `shared/`, not in `features/monitoring/`, because
+`useSupabaseQuery` (also shared) needs to emit a timing event for every
+query, and `shared/` can't depend on a feature. `features/monitoring/`
+is the only subscriber: `init.js` (called once from `app/App.jsx`)
+forwards slow-query events (>1000ms) and every Core Web Vital
+(`reportWebVitals.js`, via the `web-vitals` library) into
+`log_client_metric()`. Without a subscriber, slow queries still print a
+`console.warn` — the persistence layer is additive, not required for the
+warning to be useful locally.
+
+A read-only "Performance" tab under Settings (admin-only, same place an
+admin would look for anything operational) shows the latest Core Web
+Vital per metric and the most recent slow queries, so the data actually
+gets looked at instead of sitting unread in a table. See
+`docs/adr/0005-client-side-performance-monitoring.md`.
+
+Bundle size is handled separately and locally: `rollup-plugin-visualizer`
+writes `dist/stats.html` on every `npm run build` — open it to see what's
+actually taking up space, no telemetry or backend involved.
+
 ## Why not [enterprise pattern X]?
 
 The original brief for this refactor asked for Clean Architecture, DDD,
@@ -117,5 +144,5 @@ See [database.md](database.md) for tables, RLS, and RPCs.
 
 ## ADRs
 
-See [docs/adr/](adr/) for the reasoning behind the four biggest structural
-decisions in this refactor.
+See [docs/adr/](adr/) for the reasoning behind the biggest structural
+decisions in this refactor and the work that followed it.

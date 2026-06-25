@@ -26,7 +26,7 @@ export default function CalendarPage() {
       listBookingsForCalendar(effectiveLocation || null),
     ])
     return { locations, bookings }
-  }, [effectiveLocation])
+  }, [effectiveLocation], 'calendar.listLocationsAndBookings')
 
   const locations = data?.locations ?? []
   const bookings = data?.bookings ?? []

@@ -13,7 +13,7 @@ export function useApartmentsPage({ isRestricted, locationId }) {
       listLocations(),
     ])
     return { apartments, locations }
-  }, [isRestricted, locationId])
+  }, [isRestricted, locationId], 'apartments.listApartmentsAndLocations')
 
   // Keep a stable reference to the latest refetch so the realtime subscription
   // (set up once) never calls a stale closure bound to an old isRestricted/locationId.

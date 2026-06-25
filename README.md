@@ -29,6 +29,7 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    - `supabase-fixes.sql` — `next_booking_ref()`, `record_payment()`.
    - `supabase-publish-update.sql` — RLS update so authenticated staff can create locations and apartments from the app.
    - `supabase-refactor.sql` — `update_booking_status()` and the booking-overlap exclusion constraint.
+   - `supabase-monitoring.sql` — `performance_metrics` table and `log_client_metric()`, used by client-side performance monitoring (see below).
 
    See [docs/database.md](docs/database.md) for the full schema reference.
 
@@ -59,6 +60,17 @@ npm run gen:types
 Writes `src/shared/types/database.types.ts` from your live schema — see
 [src/shared/types/README.md](src/shared/types/README.md). Re-run after
 any schema change and commit the result.
+
+## Performance monitoring
+
+- **Core Web Vitals** and **slow queries (>1s)** are logged to the
+  browser console always, and persisted to the `performance_metrics`
+  table (apply `supabase-monitoring.sql` first). View them in the app
+  under **Settings → Performance** (admin only).
+- **Bundle size**: `npm run build` writes `dist/stats.html` — open it
+  locally to see what's taking up space.
+
+See [docs/adr/0005-client-side-performance-monitoring.md](docs/adr/0005-client-side-performance-monitoring.md).
 
 ## Production Build
 

@@ -6,6 +6,7 @@ Supabase Postgres. Apply in this order:
 2. `supabase-fixes.sql` — `next_booking_ref()`, `record_payment()`.
 3. `supabase-publish-update.sql` — RLS policy update for staff-managed locations/apartments.
 4. `supabase-refactor.sql` — `update_booking_status()`, the booking-overlap exclusion constraint.
+5. `supabase-monitoring.sql` — `performance_metrics` table, `log_client_metric()`.
 
 For typed access to this schema from the app, see
 [src/shared/types/README.md](../src/shared/types/README.md) — types are
@@ -24,6 +25,7 @@ erDiagram
     AUTH_USERS ||--|| PROFILES : "extends"
     AUTH_USERS ||--o{ BOOKINGS : "created_by"
     AUTH_USERS ||--o{ PAYMENTS : "recorded_by"
+    AUTH_USERS ||--o{ PERFORMANCE_METRICS : "recorded_by"
 
     LOCATIONS {
         uuid id PK
@@ -74,6 +76,13 @@ erDiagram
     AUTH_USERS {
         uuid id PK
         text email
+    }
+    PERFORMANCE_METRICS {
+        uuid id PK
+        text metric_type
+        text metric_name
+        numeric value
+        uuid recorded_by FK
     }
 ```
 
@@ -141,6 +150,23 @@ erDiagram
 ### `profiles`
 Extends `auth.users`. `role` (`admin` \| `employee`) and `location_id` drive Row Level Security: non-admins ("restricted" staff) only see/manage data for their assigned `location_id`.
 
+### `performance_metrics`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `metric_type` | text | `web-vital` \| `query` (CHECK) |
+| `metric_name` | text | e.g. `LCP`, `CLS`, or a query label like `bookings.listBookings` |
+| `value` | numeric | ms for queries/most web-vitals; unitless score for `CLS` |
+| `rating` | text | `good` \| `needs-improvement` \| `poor` (CHECK) — web-vitals only, null for queries |
+| `path` | text | route the metric was recorded on |
+| `metadata` | jsonb | e.g. `{ navigationType }` for web-vitals, `{ status }` for queries |
+| `recorded_by` | uuid FK → `auth.users.id` | nullable — null for unauthenticated pages (login screen) |
+
+Only `query` metrics that exceed the slow-query threshold (1000ms, see
+`shared/lib/metrics.js`) are persisted here — every query firing on every
+page load would be noise, not signal. See
+[adr/0005-client-side-performance-monitoring.md](adr/0005-client-side-performance-monitoring.md).
+
 ## Sequences
 
 | Sequence | Used by | Produces |
@@ -163,8 +189,9 @@ and is unchanged by it.
 - **`next_booking_ref()`** — returns the next `VKL-YYYY-NNNN` reference from a sequence (collision-free).
 - **`record_payment(p_booking_id, p_amount, p_payment_date, p_payment_method)`** — locks the booking row, validates the amount against the outstanding balance, inserts the payment, and updates `bookings.amount_paid`/`payment_status` in one transaction. Client/recorder identity is derived server-side from the booking row and `auth.uid()`, not from caller-supplied parameters.
 - **`update_booking_status(p_booking_id, p_new_status, p_notes DEFAULT NULL)`** — locks the booking row, checks the caller's role/location against the booking's apartment, updates `apartments.status` and `bookings.booking_status`/`notes` together. Replaces what used to be two separate, unguarded client-side `UPDATE`s (the source of an apartment/booking status desync bug) and adds the server-side admin check that cancellation previously relied on the UI alone to enforce.
+- **`log_client_metric(p_metric_type, p_metric_name, p_value, p_rating, p_path, p_metadata)`** — inserts a row into `performance_metrics`. Exists only so `recorded_by` is derived from `auth.uid()` rather than trusted from the client, and so unauthenticated callers (the login page, before any session exists) can still log a metric without an `INSERT` policy that would otherwise have to allow arbitrary anonymous writes to the table directly.
 
-All three are `SECURITY DEFINER`, meaning they run with the privileges of
+All four are `SECURITY DEFINER`, meaning they run with the privileges of
 the function owner rather than the calling user — that's what lets them
 do things a plain RLS policy can't (e.g. look up the caller's role from
 `profiles` and conditionally allow/deny within one statement). Each
@@ -189,6 +216,7 @@ RLS is enabled on every table. Full policy list:
 | `payments` | `auth_insert_payments` | INSERT | authenticated | `true` — in practice all payment inserts go through `record_payment()`, which does the real validation (amount > 0, ≤ outstanding balance) |
 | `profiles` | `auth_read_profiles` | SELECT | authenticated | `true` (read-all) |
 | `profiles` | `admin_manage_profiles` | UPDATE | authenticated | admin only |
+| `performance_metrics` | `admin_read_performance_metrics` | SELECT | authenticated | admin only — no `INSERT` policy at all; every write goes through `log_client_metric()` |
 
 **Why `bookings`/`payments` read/write policies look permissive:** RLS
 policies are evaluated per-row with no easy way to express "but only

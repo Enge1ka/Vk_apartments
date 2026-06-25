@@ -1,6 +1,11 @@
 import { renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSupabaseQuery } from './useSupabaseQuery'
+import { onMetric } from '@/shared/lib/metrics'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('useSupabaseQuery', () => {
   it('starts loading and resolves with data on success', async () => {
@@ -33,5 +38,43 @@ describe('useSupabaseQuery', () => {
     expect(queryFn).toHaveBeenCalledTimes(1)
     await result.current.refetch()
     expect(queryFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('emits a query metric with the given label and a success status', async () => {
+    const events = []
+    const unsubscribe = onMetric((e) => events.push(e))
+
+    const queryFn = vi.fn().mockResolvedValue('ok')
+    const { result } = renderHook(() => useSupabaseQuery(queryFn, [], 'listBookings'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    unsubscribe()
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'query', name: 'listBookings', status: 'success' })
+    expect(events[0].durationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('emits an error status when the query rejects', async () => {
+    const events = []
+    const unsubscribe = onMetric((e) => events.push(e))
+
+    const queryFn = vi.fn().mockRejectedValue(new Error('boom'))
+    const { result } = renderHook(() => useSupabaseQuery(queryFn, [], 'listBookings'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    unsubscribe()
+    expect(events[0]).toMatchObject({ type: 'query', name: 'listBookings', status: 'error' })
+  })
+
+  it('defaults to an "unlabeled-query" label when none is given', async () => {
+    const events = []
+    const unsubscribe = onMetric((e) => events.push(e))
+
+    const queryFn = vi.fn().mockResolvedValue('ok')
+    const { result } = renderHook(() => useSupabaseQuery(queryFn, []))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    unsubscribe()
+    expect(events[0].name).toBe('unlabeled-query')
   })
 })
