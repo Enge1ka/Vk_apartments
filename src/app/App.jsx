@@ -10,7 +10,7 @@ import ForgotPassword from '@/features/auth/components/ForgotPassword'
 import ResetPassword from '@/features/auth/components/ResetPassword'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
-const Apartments = lazy(() => import('@/pages/Apartments'))
+const Apartments = lazy(() => import('@/features/apartments/components/ApartmentsPage'))
 const Bookings = lazy(() => import('@/pages/Bookings'))
 const BookingDetail = lazy(() => import('@/pages/BookingDetail'))
 const NewBooking = lazy(() => import('@/pages/NewBooking'))

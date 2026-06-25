@@ -1,22 +1,48 @@
-import { useEffect } from 'react'
+import { createContext, useContext, useEffect, useId, useRef } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { X } from 'lucide-react'
 
+const DialogTitleContext = createContext(undefined)
+
 export function Dialog({ open, onClose, children }) {
+  const titleId = useId()
+  const panelRef = useRef(null)
+  const triggerRef = useRef(null)
+
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose?.() }
     if (open) document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
+  // Move focus into the dialog when it opens (WCAG 2.4.3) and back to
+  // whatever triggered it when it closes, since this is a custom (non-<dialog>) overlay.
+  useEffect(() => {
+    if (open) {
+      triggerRef.current = document.activeElement
+      panelRef.current?.focus()
+    } else {
+      triggerRef.current?.focus?.()
+    }
+  }, [open])
+
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
-        {children}
+    <DialogTitleContext.Provider value={titleId}>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+          className="relative z-10 w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto focus:outline-none"
+        >
+          {children}
+        </div>
       </div>
-    </div>
+    </DialogTitleContext.Provider>
   )
 }
 
@@ -25,7 +51,7 @@ export function DialogHeader({ className, children, onClose }) {
     <div className={cn('flex items-center justify-between p-5 border-b border-gray-100', className)}>
       <div className="flex-1">{children}</div>
       {onClose && (
-        <button onClick={onClose} className="ml-2 p-1 rounded-lg hover:bg-gray-100 text-gray-500">
+        <button onClick={onClose} aria-label="Close dialog" className="ml-2 p-1 rounded-lg hover:bg-gray-100 text-gray-500">
           <X size={20} />
         </button>
       )}
@@ -34,7 +60,8 @@ export function DialogHeader({ className, children, onClose }) {
 }
 
 export function DialogTitle({ className, children }) {
-  return <h2 className={cn('text-lg font-semibold text-gray-900', className)}>{children}</h2>
+  const titleId = useContext(DialogTitleContext)
+  return <h2 id={titleId} className={cn('text-lg font-semibold text-gray-900', className)}>{children}</h2>
 }
 
 export function DialogContent({ className, children }) {
