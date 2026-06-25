@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { useState } from 'react'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
 import { Input } from '@/shared/ui/Input'
@@ -11,108 +10,79 @@ import { downloadReceipt } from '@/shared/lib/receiptGenerator'
 import { Search, Download, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/features/auth/useAuth'
+import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
+import { PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
+import { searchBookingsByReference } from '@/features/bookings/api'
+import { listPayments, recordPayment } from '../api'
+import { validatePaymentAmount } from '../validators'
 
-export default function Payments() {
-  const { user, isRestricted, locationId } = useAuth()
-  const [payments, setPayments] = useState([])
-  const [loading, setLoading] = useState(true)
+export default function PaymentsPage() {
+  const { isRestricted, locationId } = useAuth()
+  const { data: payments, loading, refetch } = useSupabaseQuery(async () => {
+    if (isRestricted && !locationId) return []
+    return listPayments({ locationId: isRestricted ? locationId : undefined })
+  }, [isRestricted, locationId])
+
   const [search, setSearch] = useState('')
   const [filterMethod, setFilterMethod] = useState('')
   const [recordDialog, setRecordDialog] = useState(false)
   const [bookingSearch, setBookingSearch] = useState('')
   const [bookingResults, setBookingResults] = useState([])
   const [selectedBooking, setSelectedBooking] = useState(null)
-  const [payForm, setPayForm] = useState({ amount: '', payment_method: 'cash' })
+  const [payForm, setPayForm] = useState({ amount: '', payment_method: PAYMENT_METHOD.CASH })
+  const [payError, setPayError] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { fetchPayments() }, [isRestricted, locationId])
-
-  async function fetchPayments() {
-    setLoading(true)
-
-    let bookingIds = null
-    if (isRestricted && locationId) {
-      const { data: apts } = await supabase.from('apartments').select('id').eq('location_id', locationId)
-      const aptIds = (apts || []).map(a => a.id)
-      if (aptIds.length === 0) { setPayments([]); setLoading(false); return }
-      const { data: bks } = await supabase.from('bookings').select('id').in('apartment_id', aptIds)
-      bookingIds = (bks || []).map(b => b.id)
-      if (bookingIds.length === 0) { setPayments([]); setLoading(false); return }
-    }
-
-    let query = supabase
-      .from('payments')
-      .select(`
-        *, booking:bookings(
-          booking_reference, outstanding_balance, total_amount,
-          client:clients(full_name, phone, nrc_or_passport),
-          apartment:apartments(apartment_number, location:locations(name))
-        )
-      `)
-      .order('created_at', { ascending: false })
-
-    if (bookingIds) query = query.in('booking_id', bookingIds)
-
-    const { data } = await query
-    setPayments(data || [])
-    setLoading(false)
-  }
-
-  async function searchBookings() {
+  async function handleSearchBookings() {
     if (!bookingSearch.trim()) return
-
-    let aptIds = null
-    if (isRestricted && locationId) {
-      const { data: apts } = await supabase.from('apartments').select('id').eq('location_id', locationId)
-      aptIds = (apts || []).map(a => a.id)
-    }
-
-    let query = supabase
-      .from('bookings')
-      .select(`
-        id, booking_reference, total_amount, amount_paid, outstanding_balance, check_in_date, check_out_date,
-        client:clients(id, full_name, phone, nrc_or_passport),
-        apartment:apartments(apartment_number, location:locations(name))
-      `)
-      .ilike('booking_reference', `%${bookingSearch}%`)
-      .neq('booking_status', 'cancelled')
-      .limit(5)
-
-    if (aptIds) query = query.in('apartment_id', aptIds)
-
-    const { data } = await query
-    setBookingResults(data || [])
+    const results = await searchBookingsByReference(bookingSearch, isRestricted ? locationId : null)
+    setBookingResults(results)
   }
 
   async function savePayment() {
     if (!selectedBooking) { toast.error('Select a booking'); return }
-    if (!payForm.amount || Number(payForm.amount) <= 0) { toast.error('Enter a valid amount'); return }
-    if (Number(payForm.amount) > Number(selectedBooking.outstanding_balance || 0)) {
-      toast.error('Payment cannot exceed the outstanding balance')
+    const { valid, value, error } = validatePaymentAmount(payForm.amount, selectedBooking.outstanding_balance)
+    if (!valid) {
+      setPayError(error)
       return
     }
+
     setSaving(true)
-
-    const { data, error } = await supabase.rpc('record_payment', {
-      p_booking_id:     selectedBooking.id,
-      p_amount:         Number(payForm.amount),
-      p_payment_date:   new Date().toISOString().split('T')[0],
-      p_payment_method: payForm.payment_method,
-    })
-
-    if (error) { toast.error(error.message); setSaving(false); return }
-
-    toast.success(`Payment recorded — ${data.receipt_number}`)
-    setRecordDialog(false)
-    setSelectedBooking(null)
-    setBookingSearch('')
-    setBookingResults([])
-    setPayForm({ amount: '', payment_method: 'cash' })
-    fetchPayments()
-    setSaving(false)
+    try {
+      const data = await recordPayment({ bookingId: selectedBooking.id, amount: value, paymentMethod: payForm.payment_method })
+      toast.success(`Payment recorded — ${data.receipt_number}`)
+      setRecordDialog(false)
+      setSelectedBooking(null)
+      setBookingSearch('')
+      setBookingResults([])
+      setPayForm({ amount: '', payment_method: PAYMENT_METHOD.CASH })
+      setPayError(null)
+      refetch()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const filtered = payments.filter(p => {
+  function handleDownloadReceipt(p) {
+    downloadReceipt({
+      receiptNumber: p.receipt_number,
+      paymentDate: p.payment_date,
+      clientName: p.booking?.client?.full_name,
+      clientPhone: p.booking?.client?.phone,
+      clientNRC: p.booking?.client?.nrc_or_passport,
+      apartmentNumber: p.booking?.apartment?.apartment_number,
+      location: p.booking?.apartment?.location?.name,
+      totalAmount: p.booking?.total_amount,
+      amountPaid: p.amount,
+      outstandingBalance: p.booking?.outstanding_balance,
+      paymentMethod: p.payment_method,
+      bookingRef: p.booking?.booking_reference,
+    })
+  }
+
+  const filtered = (payments ?? []).filter(p => {
     const q = search.toLowerCase()
     const matchSearch = !search ||
       p.receipt_number?.toLowerCase().includes(q) ||
@@ -131,15 +101,14 @@ export default function Payments() {
 
       <div className="space-y-2">
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <Input placeholder="Search receipt, booking, client…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+          <Label htmlFor="payment-search" className="sr-only">Search payments</Label>
+          <Input id="payment-search" placeholder="Search receipt, booking, client…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <Select value={filterMethod} onChange={e => setFilterMethod(e.target.value)} className="h-10 text-xs">
+        <Label htmlFor="filter-payment-method" className="sr-only">Filter by payment method</Label>
+        <Select id="filter-payment-method" value={filterMethod} onChange={e => setFilterMethod(e.target.value)} className="h-10 text-xs">
           <option value="">All methods</option>
-          <option value="cash">Cash</option>
-          <option value="mobile_money">Mobile Money</option>
-          <option value="bank_transfer">Bank Transfer</option>
-          <option value="card">Card</option>
+          {PAYMENT_METHOD_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
         </Select>
       </div>
 
@@ -164,23 +133,7 @@ export default function Payments() {
                   <div className="text-right">
                     <p className="font-bold text-green-600">{formatCurrency(p.amount)}</p>
                     <div className="flex gap-1 mt-1 justify-end">
-                      <button
-                        onClick={() => downloadReceipt({
-                          receiptNumber: p.receipt_number,
-                          paymentDate: p.payment_date,
-                          clientName: p.booking?.client?.full_name,
-                          clientPhone: p.booking?.client?.phone,
-                          clientNRC: p.booking?.client?.nrc_or_passport,
-                          apartmentNumber: p.booking?.apartment?.apartment_number,
-                          location: p.booking?.apartment?.location?.name,
-                          totalAmount: p.booking?.total_amount,
-                          amountPaid: p.amount,
-                          outstandingBalance: p.booking?.outstanding_balance,
-                          paymentMethod: p.payment_method,
-                          bookingRef: p.booking?.booking_reference,
-                        })}
-                        className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"
-                      >
+                      <button onClick={() => handleDownloadReceipt(p)} aria-label="Download receipt" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
                         <Download size={16} />
                       </button>
                     </div>
@@ -192,22 +145,22 @@ export default function Payments() {
         </div>
       )}
 
-      {/* Record Payment Dialog */}
       <Dialog open={recordDialog} onClose={() => setRecordDialog(false)}>
         <DialogHeader onClose={() => setRecordDialog(false)}>
           <DialogTitle>Record Payment</DialogTitle>
         </DialogHeader>
         <DialogContent className="space-y-3">
           <div>
-            <Label>Search Booking</Label>
+            <Label htmlFor="booking-ref-search">Search Booking</Label>
             <div className="flex gap-2">
               <Input
+                id="booking-ref-search"
                 placeholder="Booking ref e.g. VKL-2026-0001"
                 value={bookingSearch}
                 onChange={e => setBookingSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && searchBookings()}
+                onKeyDown={e => e.key === 'Enter' && handleSearchBookings()}
               />
-              <Button size="sm" variant="outline" onClick={searchBookings}>Find</Button>
+              <Button size="sm" variant="outline" onClick={handleSearchBookings}>Find</Button>
             </div>
           </div>
 
@@ -234,17 +187,15 @@ export default function Payments() {
                 <p className="text-blue-700">Outstanding: <strong>{formatCurrency(selectedBooking.outstanding_balance)}</strong></p>
               </div>
               <div>
-                <Label>Amount (ZMW)</Label>
-                <Input type="number" min="1"
-                  value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
+                <Label htmlFor="record-payment-amount">Amount (ZMW)</Label>
+                <Input id="record-payment-amount" type="number" min="1"
+                  value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} aria-invalid={!!payError} />
+                {payError && <p className="text-xs text-red-500 mt-1">{payError}</p>}
               </div>
               <div>
-                <Label>Payment Method</Label>
-                <Select value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>
-                  <option value="cash">Cash</option>
-                  <option value="mobile_money">Mobile Money</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="card">Card</option>
+                <Label htmlFor="record-payment-method">Payment Method</Label>
+                <Select id="record-payment-method" value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>
+                  {PAYMENT_METHOD_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                 </Select>
               </div>
             </>

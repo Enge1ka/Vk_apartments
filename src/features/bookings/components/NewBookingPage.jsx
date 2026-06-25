@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 import { APARTMENT_STATUS, PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
 import { listApartments } from '@/features/apartments/api'
 import { listLocations } from '@/features/locations/api'
+import { recordPayment } from '@/features/payments/api'
 import { createBooking, hasOverlappingBooking } from '../api'
 import { validateApartmentStep, validateClientStep, validateInitialPayment } from '../validators'
 
@@ -104,9 +105,9 @@ export default function NewBookingPage() {
 
     const amountPaid = Number(form.amount_to_pay) || 0
 
-    let result
+    let booking
     try {
-      result = await createBooking({
+      booking = await createBooking({
         client: {
           full_name: form.full_name,
           phone: form.phone,
@@ -121,44 +122,49 @@ export default function NewBookingPage() {
         totalAmount,
         notes: form.notes,
         createdBy: user?.id,
-        amountToPay: amountPaid,
-        paymentMethod: form.payment_method,
       })
     } catch (err) {
       setSaving(false)
       toast.error(err.message)
-      // The booking itself was created; only the payment failed. Route the
-      // user there instead of leaving them on a form with no way back to it.
-      if (err.bookingId) navigate(`/bookings/${err.bookingId}`)
       return
     }
 
-    if (result.payment) {
-      const apt = apartments.find(a => a.id === form.apartment_id)
-      downloadReceipt({
-        receiptNumber: result.payment.receipt_number,
-        paymentDate: new Date().toISOString().split('T')[0],
-        clientName: form.full_name,
-        clientPhone: form.phone,
-        clientNRC: form.nrc_or_passport || null,
-        apartmentNumber: apt?.apartment_number,
-        location: locations.find(l => l.id === form.location_id)?.name,
-        checkIn: form.check_in_date,
-        checkOut: form.check_out_date,
-        numberOfDays: days,
-        ratePerDay: Number(form.rate_per_day),
-        totalAmount,
-        amountPaid,
-        outstandingBalance: totalAmount - amountPaid,
-        paymentMethod: form.payment_method,
-        staffName: user?.email,
-        bookingRef: result.bookingRef,
-      })
+    if (amountPaid > 0) {
+      try {
+        const payment = await recordPayment({ bookingId: booking.bookingId, amount: amountPaid, paymentMethod: form.payment_method })
+        const apt = apartments.find(a => a.id === form.apartment_id)
+        downloadReceipt({
+          receiptNumber: payment.receipt_number,
+          paymentDate: new Date().toISOString().split('T')[0],
+          clientName: form.full_name,
+          clientPhone: form.phone,
+          clientNRC: form.nrc_or_passport || null,
+          apartmentNumber: apt?.apartment_number,
+          location: locations.find(l => l.id === form.location_id)?.name,
+          checkIn: form.check_in_date,
+          checkOut: form.check_out_date,
+          numberOfDays: days,
+          ratePerDay: Number(form.rate_per_day),
+          totalAmount,
+          amountPaid,
+          outstandingBalance: totalAmount - amountPaid,
+          paymentMethod: form.payment_method,
+          staffName: user?.email,
+          bookingRef: booking.bookingRef,
+        })
+      } catch {
+        // The booking itself was created; only the payment failed. Route the
+        // user there instead of leaving them on a form with no way back to it.
+        setSaving(false)
+        toast.error('Booking created but payment failed. Please record the payment from the booking page.')
+        navigate(`/bookings/${booking.bookingId}`)
+        return
+      }
     }
 
     setSaving(false)
-    toast.success(`Booking ${result.bookingRef} created!`)
-    navigate(`/bookings/${result.bookingId}`)
+    toast.success(`Booking ${booking.bookingRef} created!`)
+    navigate(`/bookings/${booking.bookingId}`)
   }
 
   const selectedApt = apartments.find(a => a.id === form.apartment_id)

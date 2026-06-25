@@ -14,7 +14,7 @@ const Apartments = lazy(() => import('@/features/apartments/components/Apartment
 const Bookings = lazy(() => import('@/features/bookings/components/BookingsPage'))
 const BookingDetail = lazy(() => import('@/features/bookings/components/BookingDetailPage'))
 const NewBooking = lazy(() => import('@/features/bookings/components/NewBookingPage'))
-const Payments = lazy(() => import('@/pages/Payments'))
+const Payments = lazy(() => import('@/features/payments/components/PaymentsPage'))
 const CalendarPage = lazy(() => import('@/pages/CalendarPage'))
 const Reports = lazy(() => import('@/pages/Reports'))
 const Clients = lazy(() => import('@/features/clients/components/ClientsPage'))

@@ -1,12 +1,17 @@
 import { supabase } from '@/shared/lib/supabase'
 import { listApartmentIds } from '@/features/apartments/api'
 import { findOrCreateClient } from '@/features/clients/api'
-import { recordPayment } from '@/features/payments/api'
 import { BOOKING_STATUS } from '@/shared/constants/status'
 
 // The only module allowed to query the `bookings` table directly (other
-// than the next_booking_ref/record_payment/update_booking_status RPCs,
-// which are also only called from here and from payments/api.js).
+// than the next_booking_ref/update_booking_status RPCs, which are also
+// only called from here).
+//
+// Deliberately does not import features/payments/api.js: payments/api.js
+// imports listBookingIdsForApartments from here to scope payments by
+// location, so this module must not depend back on payments — the caller
+// (NewBookingPage) records the optional first payment itself after
+// createBooking() resolves, instead of this module orchestrating both.
 
 const EXCLUSION_VIOLATION = '23P01'
 
@@ -19,6 +24,12 @@ const LIST_SELECT = `
 `
 
 const DETAIL_SELECT = `*, client:clients(*), apartment:apartments(*, location:locations(*))`
+
+const SEARCH_SELECT = `
+  id, booking_reference, total_amount, amount_paid, outstanding_balance, check_in_date, check_out_date,
+  client:clients(id, full_name, phone, nrc_or_passport),
+  apartment:apartments(apartment_number, location:locations(name))
+`
 
 export async function listBookings(filters = {}) {
   let aptIds = null
@@ -43,6 +54,36 @@ export async function getBooking(id) {
   return data
 }
 
+// Resolves booking IDs for a set of apartments, used by payments/api.js to
+// scope the payments list to a location without payments owning a query
+// against the bookings table itself.
+export async function listBookingIdsForApartments(apartmentIds) {
+  if (apartmentIds.length === 0) return []
+  const { data, error } = await supabase.from('bookings').select('id').in('apartment_id', apartmentIds)
+  if (error) throw error
+  return (data ?? []).map(b => b.id)
+}
+
+export async function searchBookingsByReference(searchTerm, locationId) {
+  let aptIds = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase
+    .from('bookings')
+    .select(SEARCH_SELECT)
+    .ilike('booking_reference', `%${searchTerm}%`)
+    .neq('booking_status', BOOKING_STATUS.CANCELLED)
+    .limit(5)
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
+}
+
 export async function hasOverlappingBooking(apartmentId, checkInDate, checkOutDate) {
   const { data, error } = await supabase
     .from('bookings')
@@ -61,11 +102,12 @@ async function nextBookingRef() {
   return data
 }
 
-// Creates a booking (and, if amountToPay > 0, its first payment) as one
-// logical operation. The DB's exclusion constraint is the real guard against
-// overlapping bookings; the caller-side hasOverlappingBooking() check above
-// is just a fast pre-flight for a better error message in the common case.
-export async function createBooking({ client, apartmentId, checkInDate, checkOutDate, ratePerDay, totalAmount, notes, createdBy, amountToPay, paymentMethod }) {
+// Creates the booking itself (client upsert + reference generation + insert).
+// Does not record a payment — see the note above on why that's the caller's
+// job. The DB's exclusion constraint is the real guard against overlapping
+// bookings; the caller-side hasOverlappingBooking() check above is just a
+// fast pre-flight for a better error message in the common case.
+export async function createBooking({ client, apartmentId, checkInDate, checkOutDate, ratePerDay, totalAmount, notes, createdBy }) {
   const clientId = await findOrCreateClient(client)
   const bookingRef = await nextBookingRef()
 
@@ -91,22 +133,7 @@ export async function createBooking({ client, apartmentId, checkInDate, checkOut
     throw error
   }
 
-  let payment = null
-  if (amountToPay > 0) {
-    try {
-      payment = await recordPayment({ bookingId: booking.id, amount: amountToPay, paymentMethod })
-    } catch (err) {
-      // The booking was created; only the payment failed. Surface the
-      // booking id so the caller can route there instead of treating this
-      // as a hard failure that loses the booking the user just made.
-      const partialError = new Error('Booking created but payment failed. Please record the payment from the booking page.')
-      partialError.bookingId = booking.id
-      partialError.cause = err
-      throw partialError
-    }
-  }
-
-  return { bookingId: booking.id, bookingRef, payment }
+  return { bookingId: booking.id, bookingRef }
 }
 
 export async function updateBookingStatus(bookingId, newStatus) {

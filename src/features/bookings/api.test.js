@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/shared/lib/supabase'
 import * as clientsApi from '@/features/clients/api'
-import * as paymentsApi from '@/features/payments/api'
 import { cancelBooking, createBooking, hasOverlappingBooking, updateBookingStatus } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
@@ -10,6 +9,8 @@ vi.mock('@/shared/lib/supabase', () => ({
 
 afterEach(() => {
   vi.restoreAllMocks()
+  supabase.from.mockReset()
+  supabase.rpc.mockReset()
 })
 
 function mockBookingInsert(result) {
@@ -28,8 +29,6 @@ describe('createBooking', () => {
     ratePerDay: 100,
     totalAmount: 300,
     createdBy: 'user-1',
-    amountToPay: 0,
-    paymentMethod: 'cash',
   }
 
   it('creates a booking, finding or creating the client and generating a reference', async () => {
@@ -39,23 +38,9 @@ describe('createBooking', () => {
 
     const result = await createBooking(args)
 
-    expect(result).toEqual({ bookingId: 'booking-1', bookingRef: 'VKL-2026-0001', payment: null })
+    expect(result).toEqual({ bookingId: 'booking-1', bookingRef: 'VKL-2026-0001' })
     expect(clientsApi.findOrCreateClient).toHaveBeenCalledWith(args.client)
     expect(supabase.rpc).toHaveBeenCalledWith('next_booking_ref')
-  })
-
-  it('records the initial payment when amountToPay > 0', async () => {
-    vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
-    vi.spyOn(paymentsApi, 'recordPayment').mockResolvedValue({ receipt_number: 'RCP-2026-0001' })
-    supabase.rpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null })
-    mockBookingInsert({ data: { id: 'booking-1' }, error: null })
-
-    const result = await createBooking({ ...args, amountToPay: 150 })
-
-    expect(paymentsApi.recordPayment).toHaveBeenCalledWith({
-      bookingId: 'booking-1', amount: 150, paymentMethod: 'cash',
-    })
-    expect(result.payment).toEqual({ receipt_number: 'RCP-2026-0001' })
   })
 
   it('translates a DB exclusion-violation into a friendly overlap message', async () => {
@@ -64,18 +49,6 @@ describe('createBooking', () => {
     mockBookingInsert({ data: null, error: { code: '23P01', message: 'exclusion violation' } })
 
     await expect(createBooking(args)).rejects.toThrow(/already booked for those dates/)
-  })
-
-  it('still surfaces the booking id when the booking succeeds but payment fails', async () => {
-    vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
-    vi.spyOn(paymentsApi, 'recordPayment').mockRejectedValue(new Error('insufficient'))
-    supabase.rpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null })
-    mockBookingInsert({ data: { id: 'booking-1' }, error: null })
-
-    await expect(createBooking({ ...args, amountToPay: 150 })).rejects.toMatchObject({
-      bookingId: 'booking-1',
-      message: expect.stringMatching(/payment failed/),
-    })
   })
 })
 
