@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/hooks/useAuth'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { formatCurrency, formatDate } from '@/lib/bookingUtils'
+import { supabase } from '@/shared/lib/supabase'
+import { useAuth } from '@/features/auth/useAuth'
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
+import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
   TrendingUp, Clock, LogOut, Plus
 } from 'lucide-react'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/shared/ui/Button'
 
 function StatCard({ label, value, sub, icon: Icon, color = 'blue' }) {
   const colors = {

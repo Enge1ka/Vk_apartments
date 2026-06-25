@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 import { X } from 'lucide-react'
 
 export function Dialog({ open, onClose, children }) {

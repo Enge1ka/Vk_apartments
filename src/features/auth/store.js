@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export const useAppStore = create((set) => ({
+export const useAuthStore = create((set) => ({
   user: null,
   profile: null,
   authReady: false,

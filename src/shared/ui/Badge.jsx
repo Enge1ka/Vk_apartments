@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 
 const variants = {
   default: 'bg-gray-100 text-gray-800',

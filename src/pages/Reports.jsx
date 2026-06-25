@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/hooks/useAuth'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Label } from '@/components/ui/Label'
-import { formatCurrency, formatDate } from '@/lib/bookingUtils'
+import { supabase } from '@/shared/lib/supabase'
+import { useAuth } from '@/features/auth/useAuth'
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
+import { Button } from '@/shared/ui/Button'
+import { Input } from '@/shared/ui/Input'
+import { Label } from '@/shared/ui/Label'
+import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,

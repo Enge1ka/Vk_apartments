@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { Card, CardContent } from '@/components/ui/Card'
-import { Input } from '@/components/ui/Input'
+import { supabase } from '@/shared/lib/supabase'
+import { Card, CardContent } from '@/shared/ui/Card'
+import { Input } from '@/shared/ui/Input'
 import { Search, Users } from 'lucide-react'
 
 export default function Clients() {

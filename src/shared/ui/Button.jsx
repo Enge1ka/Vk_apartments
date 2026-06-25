@@ -1,5 +1,5 @@
 import { forwardRef } from 'react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 
 const variants = {
   default: 'bg-[#1e3a5f] text-white hover:bg-[#16304f] active:bg-[#122845]',

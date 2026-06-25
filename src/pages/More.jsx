@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { useAuth } from '@/hooks/useAuth'
-import { Card, CardContent } from '@/components/ui/Card'
+import { useAuth } from '@/features/auth/useAuth'
+import { Card, CardContent } from '@/shared/ui/Card'
 import { CalendarDays, Users, BarChart3, Settings, ChevronRight, LogOut } from 'lucide-react'
 
 export default function More() {

@@ -1,13 +1,13 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, Suspense, lazy } from 'react'
 import { Toaster } from 'react-hot-toast'
-import { useAuth } from '@/hooks/useAuth'
-import { isSupabaseConfigured } from '@/lib/supabase'
+import { useAuth } from '@/features/auth/useAuth'
+import { isSupabaseConfigured } from '@/shared/lib/supabase'
 import AppLayout from '@/components/AppLayout'
-import { ProtectedRoute } from '@/components/ProtectedRoute'
-import Login from '@/pages/Login'
-import ForgotPassword from '@/pages/ForgotPassword'
-import ResetPassword from '@/pages/ResetPassword'
+import { ProtectedRoute } from '@/features/auth/ProtectedRoute'
+import Login from '@/features/auth/components/Login'
+import ForgotPassword from '@/features/auth/components/ForgotPassword'
+import ResetPassword from '@/features/auth/components/ResetPassword'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const Apartments = lazy(() => import('@/pages/Apartments'))

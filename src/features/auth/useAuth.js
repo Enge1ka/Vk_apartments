@@ -1,26 +1,33 @@
 import { useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useAppStore } from '@/store/useAppStore'
+import { useAuthStore } from './store'
+import {
+  getProfile,
+  getSession,
+  onAuthStateChange,
+  signInWithPassword,
+  signOut as signOutApi,
+} from './api'
 
 export function useAuth() {
-  const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAppStore()
+  const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAuthStore()
 
   async function fetchProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+    const data = await getProfile(userId)
     if (data) setProfile(data)
   }
 
   useEffect(() => {
+    // If Supabase never responds, don't leave the UI stuck on a spinner forever.
     const timeout = setTimeout(() => setAuthReady(true), 8000)
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    getSession().then(async (session) => {
       clearTimeout(timeout)
       setUser(session?.user ?? null)
       if (session?.user) await fetchProfile(session.user.id)
       setAuthReady(true)
     }).catch(() => { clearTimeout(timeout); setAuthReady(true) })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) await fetchProfile(session.user.id)
       else clearUser()
@@ -31,14 +38,15 @@ export function useAuth() {
   }, [])
 
   async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await signInWithPassword(email, password)
     return { data, error }
   }
 
   async function signOut() {
     try {
+      // Don't let a hanging Supabase request block the user from being signed out locally.
       await Promise.race([
-        supabase.auth.signOut(),
+        signOutApi(),
         new Promise((resolve) => setTimeout(resolve, 5000)),
       ])
     } finally {

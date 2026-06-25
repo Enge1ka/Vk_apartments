@@ -1,8 +1,8 @@
 import { Navigate } from 'react-router-dom'
-import { useAppStore } from '@/store/useAppStore'
+import { useAuthStore } from './store'
 
 export function ProtectedRoute({ children, adminOnly = false }) {
-  const { user, profile, authReady } = useAppStore()
+  const { user, profile, authReady } = useAuthStore()
 
   if (!authReady) {
     return (

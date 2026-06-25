@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Label } from '@/components/ui/Label'
+import { onAuthStateChange, signOut, updatePassword } from '../api'
+import { Button } from '@/shared/ui/Button'
+import { Input } from '@/shared/ui/Input'
+import { Label } from '@/shared/ui/Label'
 import { Building2, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -20,7 +20,7 @@ export default function ResetPassword() {
     // Supabase fires PASSWORD_RECOVERY when the user arrives via the email reset link.
     // We rely solely on this event to set ready — not on getSession — because any
     // existing authenticated session would otherwise bypass the recovery gate.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
 
@@ -49,14 +49,14 @@ export default function ResetPassword() {
       return
     }
     setLoading(true)
-    const { error } = await supabase.auth.updateUser({ password })
+    const { error } = await updatePassword(password)
     setLoading(false)
     if (error) {
       toast.error(error.message)
       return
     }
     toast.success('Password updated! Please sign in.')
-    await supabase.auth.signOut()
+    await signOut()
     navigate('/login')
   }
 

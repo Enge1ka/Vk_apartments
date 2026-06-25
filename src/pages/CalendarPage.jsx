@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import { supabase } from '@/lib/supabase'
-import { Select } from '@/components/ui/Select'
-import { useAuth } from '@/hooks/useAuth'
+import { supabase } from '@/shared/lib/supabase'
+import { Select } from '@/shared/ui/Select'
+import { useAuth } from '@/features/auth/useAuth'
 
 const LOCATION_COLORS = ['#1e3a5f', '#2d8a4e', '#b45309', '#7c3aed']
 

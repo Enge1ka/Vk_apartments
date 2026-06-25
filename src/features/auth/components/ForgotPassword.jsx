@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Label } from '@/components/ui/Label'
+import { sendPasswordResetEmail } from '../api'
+import { Button } from '@/shared/ui/Button'
+import { Input } from '@/shared/ui/Input'
+import { Label } from '@/shared/ui/Label'
 import { Building2, ArrowLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -16,9 +16,7 @@ export default function ForgotPassword() {
     e.preventDefault()
     setLoading(true)
     const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${siteUrl}/reset-password`,
-    })
+    const { error } = await sendPasswordResetEmail(email, `${siteUrl}/reset-password`)
     setLoading(false)
     if (error) {
       toast.error(error.message)
