@@ -18,8 +18,8 @@ const Payments = lazy(() => import('@/features/payments/components/PaymentsPage'
 const CalendarPage = lazy(() => import('@/features/calendar/components/CalendarPage'))
 const Reports = lazy(() => import('@/features/reports/components/ReportsPage'))
 const Clients = lazy(() => import('@/features/clients/components/ClientsPage'))
-const Settings = lazy(() => import('@/pages/Settings'))
-const More = lazy(() => import('@/pages/More'))
+const Settings = lazy(() => import('@/features/settings/components/SettingsPage'))
+const More = lazy(() => import('@/components/More'))
 
 function PageFallback() {
   return (

@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '@/shared/lib/supabase'
-import { useAuth } from '@/features/auth/useAuth'
+import { useState } from 'react'
+import { assignProfileLocation, listProfiles, setProfileRole } from '@/features/auth/api'
+import { listLocations, createLocation } from '@/features/locations/api'
+import { validateLocation } from '@/features/locations/validators'
+import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
 import { Input } from '@/shared/ui/Input'
@@ -9,64 +11,71 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '
 import { Badge } from '@/shared/ui/Badge'
 import { Select } from '@/shared/ui/Select'
 import { Plus, MapPin, ClipboardList } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
 const TABS = ['Users', 'Locations', 'Audit Log']
 
-export default function Settings() {
-  const { isAdmin } = useAuth()
-  const navigate = useNavigate()
+export default function SettingsPage() {
+  // Route-level access control: this page is only ever rendered inside
+  // <ProtectedRoute adminOnly>, which reactively redirects non-admins —
+  // no need to duplicate that check here.
   const [tab, setTab] = useState('Users')
-  const [users, setUsers] = useState([])
-  const [locations, setLocations] = useState([])
   const [userDialog, setUserDialog] = useState(false)
   const [locDialog, setLocDialog] = useState(false)
   const [locForm, setLocForm] = useState({ name: '', city: '' })
+  const [locFormErrors, setLocFormErrors] = useState({})
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    if (!isAdmin) { navigate('/'); return }
-    fetchAll()
-  }, [isAdmin])
+  const { data, refetch } = useSupabaseQuery(async () => {
+    const [users, locations] = await Promise.all([listProfiles(), listLocations()])
+    return { users, locations }
+  }, [])
 
-  async function fetchAll() {
-    const [uRes, lRes] = await Promise.all([
-      supabase.from('profiles').select('*, location:locations(name)').order('created_at'),
-      supabase.from('locations').select('*').order('name'),
-    ])
-    setUsers(uRes.data || [])
-    setLocations(lRes.data || [])
-  }
+  const users = data?.users ?? []
+  const locations = data?.locations ?? []
 
   async function saveLocation() {
-    if (!locForm.name) { toast.error('Location name required'); return }
+    const { valid, data: locData, errors } = validateLocation(locForm)
+    setLocFormErrors(errors)
+    if (!valid) {
+      toast.error('Location name is required')
+      return
+    }
     setSaving(true)
-    const { error } = await supabase.from('locations').insert({ name: locForm.name, city: locForm.city || null })
-    setSaving(false)
-    if (error) { toast.error(error.message); return }
-    toast.success('Location added')
-    setLocDialog(false)
-    setLocForm({ name: '', city: '' })
-    fetchAll()
+    try {
+      await createLocation(locData)
+      toast.success('Location added')
+      setLocDialog(false)
+      setLocForm({ name: '', city: '' })
+      setLocFormErrors({})
+      refetch()
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function toggleUserRole(user) {
     const newRole = user.role === 'admin' ? 'employee' : 'admin'
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', user.id)
-    if (error) { toast.error(error.message); return }
-    toast.success(`${user.full_name || user.email || 'User'} is now ${newRole}`)
-    fetchAll()
+    try {
+      await setProfileRole(user.id, newRole)
+      toast.success(`${user.full_name || user.email || 'User'} is now ${newRole}`)
+      refetch()
+    } catch (err) {
+      toast.error(err.message)
+    }
   }
 
   async function assignLocation(userId, locationId) {
-    const { error } = await supabase.from('profiles').update({ location_id: locationId || null }).eq('id', userId)
-    if (error) { toast.error(error.message); return }
-    toast.success(locationId ? 'Location assigned' : 'Location restriction removed')
-    fetchAll()
+    try {
+      await assignProfileLocation(userId, locationId)
+      toast.success(locationId ? 'Location assigned' : 'Location restriction removed')
+      refetch()
+    } catch (err) {
+      toast.error(err.message)
+    }
   }
-
-  if (!isAdmin) return null
 
   return (
     <div className="p-4 space-y-4">
@@ -84,7 +93,6 @@ export default function Settings() {
         ))}
       </div>
 
-      {/* Users */}
       {tab === 'Users' && (
         <div className="space-y-3">
           <div className="flex justify-end">
@@ -107,8 +115,9 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Label className="text-xs text-gray-500 w-24 shrink-0">Location access</Label>
+                  <Label htmlFor={`user-location-${u.id}`} className="text-xs text-gray-500 w-24 shrink-0">Location access</Label>
                   <Select
+                    id={`user-location-${u.id}`}
                     value={u.location_id || ''}
                     onChange={e => assignLocation(u.id, e.target.value)}
                     className="flex-1 h-8 text-xs"
@@ -125,7 +134,6 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Locations */}
       {tab === 'Locations' && (
         <div className="space-y-3">
           <div className="flex justify-end">
@@ -145,7 +153,6 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Audit log placeholder */}
       {tab === 'Audit Log' && (
         <Card>
           <CardContent className="p-6 text-center">
@@ -155,19 +162,19 @@ export default function Settings() {
         </Card>
       )}
 
-      {/* Add Location Dialog */}
       <Dialog open={locDialog} onClose={() => setLocDialog(false)}>
         <DialogHeader onClose={() => setLocDialog(false)}>
           <DialogTitle>Add Location</DialogTitle>
         </DialogHeader>
         <DialogContent className="space-y-3">
           <div>
-            <Label>Location Name *</Label>
-            <Input placeholder="e.g. Nkana East" value={locForm.name} onChange={e => setLocForm(f => ({ ...f, name: e.target.value }))} />
+            <Label htmlFor="settings-loc-name">Location Name *</Label>
+            <Input id="settings-loc-name" placeholder="e.g. Nkana East" value={locForm.name} onChange={e => setLocForm(f => ({ ...f, name: e.target.value }))} aria-invalid={!!locFormErrors.name} />
+            {locFormErrors.name && <p className="text-xs text-red-500 mt-1">{locFormErrors.name}</p>}
           </div>
           <div>
-            <Label>City</Label>
-            <Input placeholder="e.g. Kitwe" value={locForm.city} onChange={e => setLocForm(f => ({ ...f, city: e.target.value }))} />
+            <Label htmlFor="settings-loc-city">City</Label>
+            <Input id="settings-loc-city" placeholder="e.g. Kitwe" value={locForm.city} onChange={e => setLocForm(f => ({ ...f, city: e.target.value }))} />
           </div>
         </DialogContent>
         <DialogFooter>
@@ -176,7 +183,6 @@ export default function Settings() {
         </DialogFooter>
       </Dialog>
 
-      {/* Invite User Dialog — placeholder (Supabase admin API required) */}
       <Dialog open={userDialog} onClose={() => setUserDialog(false)}>
         <DialogHeader onClose={() => setUserDialog(false)}>
           <DialogTitle>Invite User</DialogTitle>
