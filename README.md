@@ -48,6 +48,18 @@ npm run lint
 
 See [docs/architecture.md](docs/architecture.md) for the codebase layout and conventions.
 
+## Generated types
+
+```bash
+npx supabase login
+npx supabase link --project-ref <your-project-ref>
+npm run gen:types
+```
+
+Writes `src/shared/types/database.types.ts` from your live schema — see
+[src/shared/types/README.md](src/shared/types/README.md). Re-run after
+any schema change and commit the result.
+
 ## Production Build
 
 ```bash

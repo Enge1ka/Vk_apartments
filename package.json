@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen:types": "supabase gen types typescript --schema public > src/shared/types/database.types.ts"
   },
   "dependencies": {
     "@fullcalendar/daygrid": "^6.1.20",
@@ -60,6 +61,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
+    "supabase": "^2.108.0",
     "vite": "^8.0.12",
     "vitest": "^4.1.9"
   }
