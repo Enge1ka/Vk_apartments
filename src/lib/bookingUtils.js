@@ -41,19 +41,3 @@ export function getPaymentStatus(totalAmount, amountPaid) {
   if (amountPaid >= totalAmount) return 'paid'
   return 'partial'
 }
-
-export function getStatusColor(status) {
-  const map = {
-    available: 'bg-green-100 text-green-800',
-    occupied: 'bg-red-100 text-red-800',
-    maintenance: 'bg-gray-100 text-gray-800',
-    confirmed: 'bg-blue-100 text-blue-800',
-    checked_in: 'bg-purple-100 text-purple-800',
-    checked_out: 'bg-gray-100 text-gray-800',
-    cancelled: 'bg-red-100 text-red-800',
-    paid: 'bg-green-100 text-green-800',
-    partial: 'bg-yellow-100 text-yellow-800',
-    unpaid: 'bg-red-100 text-red-800',
-  }
-  return map[status] || 'bg-gray-100 text-gray-800'
-}
