@@ -7,6 +7,7 @@ Supabase Postgres. Apply in this order:
 3. `supabase-publish-update.sql` — RLS policy update for staff-managed locations/apartments.
 4. `supabase-refactor.sql` — `update_booking_status()`, the booking-overlap exclusion constraint.
 5. `supabase-monitoring.sql` — `performance_metrics` table, `log_client_metric()`.
+6. `supabase-hardening.sql` — revokes the implicit `PUBLIC` execute grant Postgres adds by default on `CREATE FUNCTION`, so the staff-only RPCs are no longer callable by `anon` at the grant level (their own internal checks already rejected anonymous callers; this closes the gap at the database layer too).
 
 For typed access to this schema from the app, see
 [src/shared/types/README.md](../src/shared/types/README.md) — types are
@@ -126,14 +127,16 @@ erDiagram
 | `client_id` | uuid FK → `clients.id` | |
 | `apartment_id` | uuid FK → `apartments.id` | |
 | `check_in_date`, `check_out_date` | date | required |
-| `number_of_days` | integer | **generated**: `check_out_date - check_in_date` |
+| `number_of_days` | integer | auto-computed: `check_out_date - check_in_date` — `GENERATED ALWAYS AS` in `supabase-schema.sql` (fresh installs); the live project this repo was refactored against computes it via a `BEFORE INSERT OR UPDATE` trigger instead (`trg_set_number_of_days` → `set_number_of_days()`), confirmed by direct introspection. Same result either way — see note below. |
 | `rate_per_day`, `total_amount`, `amount_paid` | numeric(10,2) | |
-| `outstanding_balance` | numeric(10,2) | **generated**: `total_amount - amount_paid` |
+| `outstanding_balance` | numeric(10,2) | auto-computed: `total_amount - amount_paid` — same generated-column-vs-trigger split as `number_of_days` (`trg_set_outstanding_balance` → `set_outstanding_balance()` on the live project). |
 | `payment_status` | text | `unpaid` \| `partial` \| `paid` (CHECK) |
 | `booking_status` | text | `confirmed` \| `checked_in` \| `checked_out` \| `cancelled` (CHECK) |
 | `created_by` | uuid FK → `auth.users.id` | |
 
-**Constraint (added by `supabase-refactor.sql`):** `no_overlapping_bookings` — a gist exclusion constraint on `(apartment_id, daterange(check_in_date, check_out_date, '[)'))` for any non-cancelled booking. The database rejects an overlapping insert/update outright, regardless of any client-side pre-check race. Requires the `btree_gist` extension.
+**Constraint (added by `supabase-refactor.sql`):** `no_overlapping_bookings` — a gist exclusion constraint on `(apartment_id, daterange(check_in_date, check_out_date, '[)'))` for any non-cancelled booking. The database rejects an overlapping insert/update outright, regardless of any client-side pre-check race. Requires the `btree_gist` extension. **Confirmed present and correct** on the live project via direct introspection.
+
+> **Schema drift note:** the live project's `number_of_days`/`outstanding_balance` are trigger-computed, not the generated columns `supabase-schema.sql` defines — confirmed by querying `pg_trigger`/`pg_get_functiondef` directly. Both approaches produce identical values; this isn't a bug, just evidence the live database predates or diverged from the checked-in schema file at some point before this refactor. Not changed here since it means altering a live table's column definitions for no functional gain — documented as-is instead.
 
 ### `payments`
 | Column | Type | Notes |
@@ -183,6 +186,8 @@ and is unchanged by it.
 | Trigger | Table | Fires | Calls | Purpose |
 |---|---|---|---|---|
 | `on_auth_user_created` | `auth.users` | `AFTER INSERT` | `handle_new_user()` | Auto-creates a matching `profiles` row (`full_name`, `email` from signup metadata; `role` defaults to `'employee'`) whenever a new Supabase Auth user signs up, so every authenticated user has a profile without a separate manual step. |
+| `trg_set_number_of_days` | `bookings` | `BEFORE INSERT OR UPDATE` | `set_number_of_days()` | Live-project-only (see schema drift note above) — sets `NEW.number_of_days := NEW.check_out_date - NEW.check_in_date`. `supabase-schema.sql` achieves the same via a generated column instead. |
+| `trg_set_outstanding_balance` | `bookings` | `BEFORE INSERT OR UPDATE` | `set_outstanding_balance()` | Live-project-only — sets `NEW.outstanding_balance := NEW.total_amount - COALESCE(NEW.amount_paid, 0)`. Same caveat as above. |
 
 ## RPCs (`SECURITY DEFINER`, used instead of direct table writes for anything that must be atomic)
 
@@ -191,12 +196,27 @@ and is unchanged by it.
 - **`update_booking_status(p_booking_id, p_new_status, p_notes DEFAULT NULL)`** — locks the booking row, checks the caller's role/location against the booking's apartment, updates `apartments.status` and `bookings.booking_status`/`notes` together. Replaces what used to be two separate, unguarded client-side `UPDATE`s (the source of an apartment/booking status desync bug) and adds the server-side admin check that cancellation previously relied on the UI alone to enforce.
 - **`log_client_metric(p_metric_type, p_metric_name, p_value, p_rating, p_path, p_metadata)`** — inserts a row into `performance_metrics`. Exists only so `recorded_by` is derived from `auth.uid()` rather than trusted from the client, and so unauthenticated callers (the login page, before any session exists) can still log a metric without an `INSERT` policy that would otherwise have to allow arbitrary anonymous writes to the table directly.
 
-All four are `SECURITY DEFINER`, meaning they run with the privileges of
+All five are `SECURITY DEFINER`, meaning they run with the privileges of
 the function owner rather than the calling user — that's what lets them
 do things a plain RLS policy can't (e.g. look up the caller's role from
 `profiles` and conditionally allow/deny within one statement). Each
 re-derives identity from `auth.uid()` server-side rather than trusting
 any caller-supplied user/client ID.
+
+**Grant hygiene:** Postgres implicitly grants `EXECUTE` to `PUBLIC` on
+every `CREATE FUNCTION` unless revoked. `supabase-fixes.sql` and
+`supabase-refactor.sql` only ever added an explicit `GRANT ... TO
+authenticated`, never a `REVOKE ... FROM PUBLIC` — confirmed via direct
+introspection that this left `next_booking_ref()`, `record_payment()`,
+and `update_booking_status()` callable by the `anon` role at the grant
+level (not exploitable in practice, since each immediately raises an
+exception for any caller with no matching `profiles` row, which is
+always true for `anon` — but grants should reflect intent regardless of
+whether the function body happens to also guard it).
+`supabase-hardening.sql` revokes the `PUBLIC` grant on those three and
+re-asserts the `authenticated`-only grant explicitly.
+`log_client_metric()` keeps its `anon` grant intentionally — the login
+page needs it before any session exists.
 
 ## Row Level Security policies
 

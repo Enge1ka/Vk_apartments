@@ -30,6 +30,7 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    - `supabase-publish-update.sql` — RLS update so authenticated staff can create locations and apartments from the app.
    - `supabase-refactor.sql` — `update_booking_status()` and the booking-overlap exclusion constraint.
    - `supabase-monitoring.sql` — `performance_metrics` table and `log_client_metric()`, used by client-side performance monitoring (see below).
+   - `supabase-hardening.sql` — revokes the default `PUBLIC` execute grant on the staff-only RPCs.
 
    See [docs/database.md](docs/database.md) for the full schema reference.
 
