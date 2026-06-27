@@ -3,13 +3,15 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from './SettingsPage'
 import * as authApi from '@/features/auth/api'
+import type { Profile } from '@/features/auth/api'
 import * as locationsApi from '@/features/locations/api'
+import type { Location } from '@/features/locations/api'
 
 const USERS = [
   { id: 'u1', full_name: 'Alice Admin', email: 'alice@vk.com', role: 'admin', location_id: null, location: null },
   { id: 'u2', full_name: 'Bob Staff', email: 'bob@vk.com', role: 'employee', location_id: 'loc-1', location: { name: 'Nkana East' } },
-]
-const LOCATIONS = [{ id: 'loc-1', name: 'Nkana East' }]
+] as Profile[]
+const LOCATIONS = [{ id: 'loc-1', name: 'Nkana East' }] as Location[]
 
 afterEach(() => {
   vi.restoreAllMocks()

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { assignProfileLocation, listProfiles, setProfileRole } from '@/features/auth/api'
+import { assignProfileLocation, listProfiles, setProfileRole, type Profile } from '@/features/auth/api'
 import { listLocations, createLocation } from '@/features/locations/api'
 import { validateLocation } from '@/features/locations/validators'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const [userDialog, setUserDialog] = useState(false)
   const [locDialog, setLocDialog] = useState(false)
   const [locForm, setLocForm] = useState({ name: '', city: '' })
-  const [locFormErrors, setLocFormErrors] = useState({})
+  const [locFormErrors, setLocFormErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
   const { data, refetch } = useSupabaseQuery(async () => {
@@ -51,30 +51,30 @@ export default function SettingsPage() {
       setLocFormErrors({})
       refetch()
     } catch (err) {
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
   }
 
-  async function toggleUserRole(user) {
+  async function toggleUserRole(user: Profile) {
     const newRole = user.role === 'admin' ? 'employee' : 'admin'
     try {
       await setProfileRole(user.id, newRole)
       toast.success(`${user.full_name || user.email || 'User'} is now ${newRole}`)
       refetch()
     } catch (err) {
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
     }
   }
 
-  async function assignLocation(userId, locationId) {
+  async function assignLocation(userId: string, locationId: string) {
     try {
       await assignProfileLocation(userId, locationId)
       toast.success(locationId ? 'Location assigned' : 'Location restriction removed')
       refetch()
     } catch (err) {
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
     }
   }
 
