@@ -68,8 +68,11 @@ any schema change and commit the result.
   browser console always, and persisted to the `performance_metrics`
   table (apply `supabase-monitoring.sql` first). View them in the app
   under **Settings → Performance** (admin only).
-- **Bundle size**: `npm run build` writes `dist/stats.html` — open it
-  locally to see what's taking up space.
+- **Bundle size**: opt-in only, since the whole `dist/` folder gets
+  published — running it on every build would put your bundle breakdown
+  at a public URL. Run `ANALYZE=true npm run build` (bash) or
+  `$env:ANALYZE='true'; npm run build` (PowerShell), then open the
+  resulting `dist/stats.html` locally before deleting `dist/`.
 
 See [docs/adr/0005-client-side-performance-monitoring.md](docs/adr/0005-client-side-performance-monitoring.md).
 

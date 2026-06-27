@@ -8,10 +8,12 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    // Writes dist/stats.html on every `npm run build` — open it locally to
-    // see what's actually taking up bundle size, instead of guessing.
-    visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
-  ],
+    // Opt-in only (ANALYZE=true npm run build) — writes dist/stats.html.
+    // Must not run on every production build: Netlify/Vercel publish the
+    // whole dist/ folder, so an always-on stats.html would be a publicly
+    // reachable bundle/dependency breakdown at your real domain.
+    process.env.ANALYZE && visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
+  ].filter(Boolean),
   envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   resolve: {
     alias: {

@@ -24,4 +24,12 @@ export default defineConfig([
       'no-unused-vars': 'warn',
     },
   },
+  {
+    // Config files run under Node, not the browser — they need `process`,
+    // not the browser globals the rest of the app's source uses.
+    files: ['*.config.js'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
 ])
