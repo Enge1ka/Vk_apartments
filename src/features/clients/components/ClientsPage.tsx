@@ -41,8 +41,8 @@ export default function ClientsPage() {
                 <p className="text-sm text-gray-500">{c.phone}</p>
                 {c.nrc_or_passport && <p className="text-xs text-gray-400">NRC: {c.nrc_or_passport}</p>}
                 {c.company && <p className="text-xs text-gray-400">{c.company}</p>}
-                {c.bookings?.length > 0 && (
-                  <p className="text-xs text-gray-400 mt-2">{c.bookings.length} booking{c.bookings.length !== 1 ? 's' : ''}</p>
+                {(c.bookings?.length ?? 0) > 0 && (
+                  <p className="text-xs text-gray-400 mt-2">{c.bookings?.length} booking{c.bookings?.length !== 1 ? 's' : ''}</p>
                 )}
               </CardContent>
             </Card>

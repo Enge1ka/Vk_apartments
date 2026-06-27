@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import ClientsPage from './ClientsPage'
 import * as clientsApi from '../api'
+import type { Client } from '../api'
 
 const CLIENTS = [
-  { id: '1', full_name: 'John Banda', phone: '+260970000001', nrc_or_passport: '123456/10/1', bookings: [] },
-  { id: '2', full_name: 'Mary Phiri', phone: '+260970000002', nrc_or_passport: null, bookings: [{ id: 'b1' }] },
-]
+  { id: '1', full_name: 'John Banda', phone: '+260970000001', nrc_or_passport: '123456/10/1', email: null, company: null, bookings: [] },
+  { id: '2', full_name: 'Mary Phiri', phone: '+260970000002', nrc_or_passport: null, email: null, company: null, bookings: [{ id: 'b1' }] },
+] as Client[]
 
 describe('ClientsPage', () => {
   it('renders all clients, then narrows the list as the user searches', async () => {
