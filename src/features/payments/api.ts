@@ -5,6 +5,44 @@ import { listBookingIdsForApartments } from '@/features/bookings/api'
 // The only module allowed to query the `payments` table directly, or call
 // the record_payment RPC.
 
+export interface Payment {
+  id: string
+  booking_id: string
+  client_id: string
+  amount: number
+  payment_date: string
+  payment_method: string
+  receipt_number: string
+  recorded_by: string | null
+  created_at?: string
+  // Only present on rows returned by listPayments(), which joins bookings.
+  booking?: {
+    booking_reference: string
+    outstanding_balance: number
+    total_amount: number
+    client: { full_name: string; phone: string; nrc_or_passport: string | null } | null
+    apartment: { apartment_number: string; location: { name: string } | null } | null
+  } | null
+}
+
+export interface PaymentFilters {
+  locationId?: string
+  dateFrom?: string
+  dateTo?: string
+  limit?: number
+}
+
+export interface RecordPaymentInput {
+  bookingId: string
+  amount: number
+  paymentDate?: string
+  paymentMethod: string
+}
+
+export interface RecordPaymentResult {
+  receipt_number: string
+}
+
 const LIST_SELECT = `
   *, booking:bookings(
     booking_reference, outstanding_balance, total_amount,
@@ -17,8 +55,8 @@ const LIST_SELECT = `
 // (inclusive, on payment_date), limit. Reused as-is by the Payments page,
 // Dashboard (today's revenue + recent payments), and Reports (date-range
 // revenue) — previously each re-implemented the location-scoping chain.
-export async function listPayments(filters = {}) {
-  let bookingIds = null
+export async function listPayments(filters: PaymentFilters = {}): Promise<Payment[]> {
+  let bookingIds: string[] | null = null
   if (filters.locationId) {
     const aptIds = await listApartmentIds(filters.locationId)
     if (aptIds.length === 0) return []
@@ -34,20 +72,20 @@ export async function listPayments(filters = {}) {
 
   const { data, error } = await query
   if (error) throw error
-  return data ?? []
+  return (data ?? []) as unknown as Payment[]
 }
 
-export async function listPaymentsForBooking(bookingId) {
+export async function listPaymentsForBooking(bookingId: string): Promise<Payment[]> {
   const { data, error } = await supabase
     .from('payments')
     .select('*')
     .eq('booking_id', bookingId)
     .order('created_at')
   if (error) throw error
-  return data ?? []
+  return (data ?? []) as unknown as Payment[]
 }
 
-export async function recordPayment({ bookingId, amount, paymentDate, paymentMethod }) {
+export async function recordPayment({ bookingId, amount, paymentDate, paymentMethod }: RecordPaymentInput): Promise<RecordPaymentResult> {
   const { data, error } = await supabase.rpc('record_payment', {
     p_booking_id: bookingId,
     p_amount: amount,

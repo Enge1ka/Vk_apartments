@@ -8,16 +8,21 @@ vi.mock('@/shared/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
 }))
 
+// See features/bookings/api.test.ts for why vi.mocked() + `any` chain fakes,
+// rather than fighting Supabase's deeply generic builder types.
+const mockFrom = vi.mocked(supabase.from)
+const mockRpc = vi.mocked(supabase.rpc)
+
 afterEach(() => {
   vi.restoreAllMocks()
-  supabase.from.mockReset()
-  supabase.rpc.mockReset()
+  mockFrom.mockReset()
+  mockRpc.mockReset()
 })
 
 describe('listPayments', () => {
   it('lists all payments when no location filter is given', async () => {
     const chain = { select: () => chain, order: () => Promise.resolve({ data: [{ id: 'p1' }], error: null }) }
-    supabase.from.mockReturnValue(chain)
+    mockFrom.mockReturnValue(chain as any)
 
     await expect(listPayments()).resolves.toEqual([{ id: 'p1' }])
   })
@@ -25,14 +30,14 @@ describe('listPayments', () => {
   it('scopes to bookings for the location, short-circuiting when there are none', async () => {
     vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
     await expect(listPayments({ locationId: 'loc-1' })).resolves.toEqual([])
-    expect(supabase.from).not.toHaveBeenCalled()
+    expect(mockFrom).not.toHaveBeenCalled()
   })
 
   it('filters by resolved booking ids when the location has apartments and bookings', async () => {
     vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue(['apt-1'])
     vi.spyOn(bookingsApi, 'listBookingIdsForApartments').mockResolvedValue(['booking-1'])
     const chain = { select: () => chain, order: () => chain, in: vi.fn(() => Promise.resolve({ data: [{ id: 'p1' }], error: null })) }
-    supabase.from.mockReturnValue(chain)
+    mockFrom.mockReturnValue(chain as any)
 
     const result = await listPayments({ locationId: 'loc-1' })
     expect(chain.in).toHaveBeenCalledWith('booking_id', ['booking-1'])
@@ -45,7 +50,7 @@ describe('listPayments', () => {
       gte: vi.fn(() => chain), lte: vi.fn(() => chain),
       limit: vi.fn(() => Promise.resolve({ data: [], error: null })),
     }
-    supabase.from.mockReturnValue(chain)
+    mockFrom.mockReturnValue(chain as any)
 
     await listPayments({ dateFrom: '2026-01-01', dateTo: '2026-01-31', limit: 5 })
 
@@ -57,18 +62,18 @@ describe('listPayments', () => {
 
 describe('recordPayment', () => {
   it('calls the record_payment RPC and returns its result', async () => {
-    supabase.rpc.mockResolvedValue({ data: { receipt_number: 'RCP-2026-0001' }, error: null })
+    mockRpc.mockResolvedValue({ data: { receipt_number: 'RCP-2026-0001' }, error: null } as any)
 
     const result = await recordPayment({ bookingId: 'booking-1', amount: 100, paymentMethod: 'cash' })
 
-    expect(supabase.rpc).toHaveBeenCalledWith('record_payment', expect.objectContaining({
+    expect(mockRpc).toHaveBeenCalledWith('record_payment', expect.objectContaining({
       p_booking_id: 'booking-1', p_amount: 100, p_payment_method: 'cash',
     }))
     expect(result).toEqual({ receipt_number: 'RCP-2026-0001' })
   })
 
   it('throws when the RPC returns an error', async () => {
-    supabase.rpc.mockResolvedValue({ data: null, error: { message: 'exceeds balance' } })
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'exceeds balance' } } as any)
     await expect(recordPayment({ bookingId: 'booking-1', amount: 9999, paymentMethod: 'cash' }))
       .rejects.toMatchObject({ message: 'exceeds balance' })
   })

@@ -3,7 +3,8 @@ import { z } from 'zod'
 // Shared by every place that records a payment against an existing balance
 // (NewBooking's initial payment step, BookingDetail, and the Payments page) —
 // previously this amount-vs-balance check was reimplemented per form.
-export function validatePaymentAmount(amount, outstandingBalance) {
+export function validatePaymentAmount(amount: string | number, outstandingBalance: number):
+  { valid: true; value: number; error: null } | { valid: false; value: null; error: string } {
   const schema = z.preprocess(
     (v) => (v === '' || v === null || v === undefined ? undefined : Number(v)),
     z.number('Enter a valid amount')

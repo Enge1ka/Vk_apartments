@@ -12,25 +12,25 @@ import toast from 'react-hot-toast'
 import { useAuth } from '@/features/auth/useAuth'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
-import { searchBookingsByReference } from '@/features/bookings/api'
-import { listPayments, recordPayment } from '../api'
+import { searchBookingsByReference, type BookingSearchResult } from '@/features/bookings/api'
+import { listPayments, recordPayment, type Payment } from '../api'
 import { validatePaymentAmount } from '../validators'
 
 export default function PaymentsPage() {
   const { isRestricted, locationId } = useAuth()
   const { data: payments, loading, refetch } = useSupabaseQuery(async () => {
     if (isRestricted && !locationId) return []
-    return listPayments({ locationId: isRestricted ? locationId : undefined })
+    return listPayments({ locationId: isRestricted ? (locationId ?? undefined) : undefined })
   }, [isRestricted, locationId], 'payments.listPayments')
 
   const [search, setSearch] = useState('')
   const [filterMethod, setFilterMethod] = useState('')
   const [recordDialog, setRecordDialog] = useState(false)
   const [bookingSearch, setBookingSearch] = useState('')
-  const [bookingResults, setBookingResults] = useState([])
-  const [selectedBooking, setSelectedBooking] = useState(null)
-  const [payForm, setPayForm] = useState({ amount: '', payment_method: PAYMENT_METHOD.CASH })
-  const [payError, setPayError] = useState(null)
+  const [bookingResults, setBookingResults] = useState<BookingSearchResult[]>([])
+  const [selectedBooking, setSelectedBooking] = useState<BookingSearchResult | null>(null)
+  const [payForm, setPayForm] = useState({ amount: '', payment_method: PAYMENT_METHOD.CASH as string })
+  const [payError, setPayError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   async function handleSearchBookings() {
@@ -59,13 +59,13 @@ export default function PaymentsPage() {
       setPayError(null)
       refetch()
     } catch (err) {
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
   }
 
-  function handleDownloadReceipt(p) {
+  function handleDownloadReceipt(p: Payment) {
     downloadReceipt({
       receiptNumber: p.receipt_number,
       paymentDate: p.payment_date,
@@ -169,7 +169,7 @@ export default function PaymentsPage() {
               {bookingResults.map(b => (
                 <button
                   key={b.id}
-                  onClick={() => { setSelectedBooking(b); setBookingResults([]); setPayForm(f => ({ ...f, amount: b.outstanding_balance })) }}
+                  onClick={() => { setSelectedBooking(b); setBookingResults([]); setPayForm(f => ({ ...f, amount: String(b.outstanding_balance) })) }}
                   className={`w-full text-left p-3 rounded-xl border text-sm transition-colors ${selectedBooking?.id === b.id ? 'border-[#1e3a5f] bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
                 >
                   <p className="font-semibold font-mono">{b.booking_reference}</p>
