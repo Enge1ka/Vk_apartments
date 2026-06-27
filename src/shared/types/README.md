@@ -33,7 +33,14 @@ type Booking = Database['public']['Tables']['bookings']['Row']
 type BookingInsert = Database['public']['Tables']['bookings']['Insert']
 ```
 
-Once this repo migrates to TypeScript, every feature's `api.js` (→
-`api.ts`) should import its table's `Row`/`Insert`/`Update` types from
-here instead of hand-declaring interfaces, so the frontend types stay
-synchronized with the database by construction.
+The codebase is already TypeScript (see `docs/adr/0006-typescript-migration.md`),
+but this file doesn't exist yet, so every feature's `api.ts` currently
+hand-declares its own row/input interfaces instead — a deliberate stand-in,
+not the end state. Once you generate this file, two things should change:
+
+1. `shared/lib/supabase.ts`: `createClient<Database>(url, key)` instead of
+   the untyped `createClient(url, key)` (there's a `// TODO` marking the spot).
+2. Each feature's `api.ts`: replace its hand-written interfaces with
+   `Database['public']['Tables']['<table>']['Row']`/`['Insert']`, so the
+   frontend types stay synchronized with the database by construction
+   instead of by someone remembering to update both places.

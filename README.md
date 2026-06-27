@@ -46,6 +46,7 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
 npm run test       # run once
 npm run test:watch # watch mode
 npm run lint
+npm run typecheck  # tsc --noEmit — the whole codebase is TypeScript
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the codebase layout and conventions.
