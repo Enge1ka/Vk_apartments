@@ -2,9 +2,12 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useDashboardData } from './useDashboardData'
 import * as apartmentsApi from '@/features/apartments/api'
+import type { Apartment } from '@/features/apartments/api'
 import * as locationsApi from '@/features/locations/api'
+import type { Location } from '@/features/locations/api'
 import * as bookingsApi from '@/features/bookings/api'
 import * as paymentsApi from '@/features/payments/api'
+import type { Payment } from '@/features/payments/api'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -16,11 +19,11 @@ describe('useDashboardData', () => {
       { location_id: 'loc-1', status: 'occupied' },
       { location_id: 'loc-1', status: 'available' },
       { location_id: 'loc-2', status: 'maintenance' },
-    ])
+    ] as Apartment[])
     vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([
       { id: 'loc-1', name: 'Nkana East' },
       { id: 'loc-2', name: 'Ndola' },
-    ])
+    ] as Location[])
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])
@@ -42,7 +45,7 @@ describe('useDashboardData', () => {
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockImplementation(async (filters) => {
       // Distinguish the "today" call (has dateFrom) from the "recent" call (has limit).
-      if (filters?.dateFrom) return [{ amount: '100' }, { amount: '50' }]
+      if (filters?.dateFrom) return [{ amount: '100' }, { amount: '50' }] as unknown as Payment[]
       return []
     })
 
@@ -57,7 +60,7 @@ describe('useDashboardData', () => {
     vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([
       { id: 'loc-1', name: 'Nkana East' },
       { id: 'loc-2', name: 'Ndola' },
-    ])
+    ] as Location[])
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])

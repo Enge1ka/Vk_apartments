@@ -5,12 +5,20 @@ import { Button } from '@/shared/ui/Button'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
-  TrendingUp, Clock, LogOut, Plus,
+  TrendingUp, Clock, LogOut, Plus, type LucideIcon,
 } from 'lucide-react'
 import { useDashboardData } from '../useDashboardData'
 
-function StatCard({ label, value, sub, icon: Icon, color = 'blue' }) {
-  const colors = {
+interface StatCardProps {
+  label: string
+  value: string | number
+  sub?: string
+  icon: LucideIcon
+  color?: 'blue' | 'green' | 'red' | 'yellow'
+}
+
+function StatCard({ label, value, sub, icon: Icon, color = 'blue' }: StatCardProps) {
+  const colors: Record<string, string> = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
     red: 'bg-red-50 text-red-600',

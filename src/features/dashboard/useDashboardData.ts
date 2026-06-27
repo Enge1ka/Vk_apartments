@@ -5,6 +5,11 @@ import { listUpcomingCheckIns, listUpcomingCheckOuts } from '@/features/bookings
 import { listPayments } from '@/features/payments/api'
 import { APARTMENT_STATUS } from '@/shared/constants/status'
 
+interface UseDashboardDataArgs {
+  isRestricted: boolean
+  locationId: string | null
+}
+
 function todayIsoRange(days = 0) {
   const today = new Date().toISOString().split('T')[0]
   const to = new Date(Date.now() + days * 86400000).toISOString().split('T')[0]
@@ -13,8 +18,8 @@ function todayIsoRange(days = 0) {
 
 // Composes apartments/locations/bookings/payments into the dashboard's
 // view model. Doesn't own a table itself — every read goes through the
-// owning feature's api.js.
-export function useDashboardData({ isRestricted, locationId }) {
+// owning feature's api.ts.
+export function useDashboardData({ isRestricted, locationId }: UseDashboardDataArgs) {
   const { data, loading, refetch } = useSupabaseQuery(async () => {
     const { today, to: in3Days } = todayIsoRange(3)
     const locationFilter = isRestricted && locationId ? locationId : undefined
