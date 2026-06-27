@@ -4,15 +4,22 @@ import { getBookingStatusSummary, listOutstandingBookings } from '@/features/boo
 import { listPayments } from '@/features/payments/api'
 import { summarizeOccupancy, summarizeOutstanding, summarizeRevenue } from './selectors'
 
-export function useReportsData({ isRestricted, locationId, dateFrom, dateTo }) {
+interface UseReportsDataArgs {
+  isRestricted: boolean
+  locationId: string | null
+  dateFrom?: string
+  dateTo?: string
+}
+
+export function useReportsData({ isRestricted, locationId, dateFrom, dateTo }: UseReportsDataArgs) {
   const locationFilter = isRestricted && locationId ? locationId : undefined
 
   const { data, loading } = useSupabaseQuery(async () => {
     const [payments, outstandingBookings, apartments, bookingSummary] = await Promise.all([
       listPayments({ locationId: locationFilter, dateFrom, dateTo }),
-      listOutstandingBookings(locationFilter),
+      listOutstandingBookings(locationFilter ?? null),
       listApartments(locationFilter ? { locationId: locationFilter } : {}),
-      getBookingStatusSummary(locationFilter),
+      getBookingStatusSummary(locationFilter ?? null),
     ])
 
     return {

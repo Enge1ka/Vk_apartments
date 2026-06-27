@@ -14,7 +14,7 @@ import { useReportsData } from '../useReportsData'
 import { getPresetDates } from '../selectors'
 
 const COLORS = ['#1e3a5f', '#2d8a4e', '#b45309', '#7c3aed', '#dc2626']
-const METHOD_COLORS = { cash: '#1e3a5f', mobile_money: '#2d8a4e', bank_transfer: '#b45309', card: '#7c3aed' }
+const METHOD_COLORS: Record<string, string> = { cash: '#1e3a5f', mobile_money: '#2d8a4e', bank_transfer: '#b45309', card: '#7c3aed' }
 
 const TABS = ['Revenue', 'Occupancy', 'Bookings', 'Outstanding']
 const PRESETS = [
@@ -46,7 +46,7 @@ export default function ReportsPage() {
   const { revenue, outstanding, occupancy, bookingSummary, loading } = useReportsData({ isRestricted, locationId, dateFrom, dateTo })
 
   function exportCSV() {
-    const rows = [['Date', 'Amount (ZMW)']]
+    const rows: (string | number)[][] = [['Date', 'Amount (ZMW)']]
     revenue.daily.forEach(d => rows.push([d.date, d.amount]))
     const csv = rows.map(r => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -159,8 +159,8 @@ export default function ReportsPage() {
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={revenue.daily}>
                     <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} width={55} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                    <Tooltip formatter={v => formatCurrency(v)} />
+                    <YAxis tick={{ fontSize: 10 }} width={55} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(v) => formatCurrency(Number(v))} />
                     <Bar dataKey="amount" fill="#1e3a5f" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -174,10 +174,19 @@ export default function ReportsPage() {
               <CardContent className="p-3">
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
-                    <Pie data={revenue.byLocation} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                    <Pie
+                      data={revenue.byLocation}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={70}
+                      label={({ name, percent }: { name?: string; percent?: number }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
                       {revenue.byLocation.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                     </Pie>
-                    <Tooltip formatter={v => formatCurrency(v)} />
+                    <Tooltip formatter={(v) => formatCurrency(Number(v))} />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>

@@ -1,17 +1,28 @@
 import { PAYMENT_METHOD_OPTIONS, APARTMENT_STATUS } from '@/shared/constants/status'
+import type { Payment } from '@/features/payments/api'
+import type { OutstandingBooking } from '@/features/bookings/api'
+import type { Apartment } from '@/features/apartments/api'
 
-const METHOD_LABELS = Object.fromEntries(PAYMENT_METHOD_OPTIONS.map(o => [o.value, o.label]))
+const METHOD_LABELS: Record<string, string> = Object.fromEntries(PAYMENT_METHOD_OPTIONS.map(o => [o.value, o.label]))
 
 // Pure aggregation functions, kept out of the page component so the
 // report's actual business logic (what counts as revenue-by-location,
 // occupancy rate, etc.) is unit-testable without rendering anything.
 
-export function summarizeRevenue(payments) {
+export interface RevenueSummary {
+  total: number
+  byMethod: { name: string; value: number; key: string }[]
+  byLocation: { name: string; value: number }[]
+  byApartment: { name: string; amount: number }[]
+  daily: { date: string; amount: number }[]
+}
+
+export function summarizeRevenue(payments: Payment[]): RevenueSummary {
   const total = payments.reduce((s, p) => s + Number(p.amount), 0)
-  const byMethod = {}
-  const byLoc = {}
-  const byApt = {}
-  const byDay = {}
+  const byMethod: Record<string, number> = {}
+  const byLoc: Record<string, number> = {}
+  const byApt: Record<string, number> = {}
+  const byDay: Record<string, number> = {}
 
   for (const p of payments) {
     const method = p.payment_method || 'unknown'
@@ -32,19 +43,30 @@ export function summarizeRevenue(payments) {
   }
 }
 
-export function summarizeOutstanding(bookings) {
+export interface OutstandingSummary {
+  total: number
+  bookings: OutstandingBooking[]
+}
+
+export function summarizeOutstanding(bookings: OutstandingBooking[]): OutstandingSummary {
   return {
     total: bookings.reduce((s, b) => s + Number(b.outstanding_balance || 0), 0),
     bookings,
   }
 }
 
-export function summarizeOccupancy(apartments) {
+export interface OccupancySummary {
+  current: number
+  total: number
+  byLocation: { name: string; total: number; occupied: number; rate: number }[]
+}
+
+export function summarizeOccupancy(apartments: Apartment[]): OccupancySummary {
   const total = apartments.length
   const occupied = apartments.filter(a => a.status === APARTMENT_STATUS.OCCUPIED).length
 
-  const byLoc = {}
-  const totalByLoc = {}
+  const byLoc: Record<string, number> = {}
+  const totalByLoc: Record<string, number> = {}
   for (const a of apartments) {
     const loc = a.location?.name || 'Unknown'
     totalByLoc[loc] = (totalByLoc[loc] || 0) + 1
@@ -63,8 +85,13 @@ export function summarizeOccupancy(apartments) {
   }
 }
 
-export function getPresetDates(preset, now = new Date()) {
-  const fmt = d => d.toISOString().split('T')[0]
+export interface DateRange {
+  from: string
+  to: string
+}
+
+export function getPresetDates(preset: string, now: Date = new Date()): DateRange | null {
+  const fmt = (d: Date) => d.toISOString().split('T')[0]
   if (preset === 'today') return { from: fmt(now), to: fmt(now) }
   if (preset === 'week') {
     const start = new Date(now); start.setDate(now.getDate() - now.getDay())

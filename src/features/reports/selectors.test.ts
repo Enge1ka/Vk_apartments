@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { getPresetDates, summarizeOccupancy, summarizeOutstanding, summarizeRevenue } from './selectors'
+import type { Payment } from '@/features/payments/api'
+import type { OutstandingBooking } from '@/features/bookings/api'
+import type { Apartment } from '@/features/apartments/api'
 
 describe('summarizeRevenue', () => {
   const payments = [
     { amount: '100', payment_method: 'cash', payment_date: '2026-01-05', booking: { apartment: { apartment_number: 'A01', location: { name: 'Nkana East' } } } },
     { amount: '50', payment_method: 'mobile_money', payment_date: '2026-01-05', booking: { apartment: { apartment_number: 'A02', location: { name: 'Ndola' } } } },
     { amount: '25', payment_method: 'cash', payment_date: '2026-01-06', booking: { apartment: { apartment_number: 'A01', location: { name: 'Nkana East' } } } },
-  ]
+  ] as unknown as Payment[]
 
   it('sums the total and groups by method, location, apartment, and day', () => {
     const result = summarizeRevenue(payments)
@@ -30,7 +33,7 @@ describe('summarizeRevenue', () => {
 
 describe('summarizeOutstanding', () => {
   it('sums outstanding balances and passes the bookings through', () => {
-    const bookings = [{ outstanding_balance: '100' }, { outstanding_balance: '50' }]
+    const bookings = [{ outstanding_balance: '100' }, { outstanding_balance: '50' }] as unknown as OutstandingBooking[]
     expect(summarizeOutstanding(bookings)).toEqual({ total: 150, bookings })
   })
 })
@@ -41,7 +44,7 @@ describe('summarizeOccupancy', () => {
       { status: 'occupied', location: { name: 'Nkana East' } },
       { status: 'available', location: { name: 'Nkana East' } },
       { status: 'occupied', location: { name: 'Ndola' } },
-    ]
+    ] as unknown as Apartment[]
     const result = summarizeOccupancy(apartments)
     expect(result).toEqual({
       current: 2,
