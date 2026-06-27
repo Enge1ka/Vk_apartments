@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PerformanceTab from './PerformanceTab'
 import * as monitoringApi from '../api'
+import type { PerformanceMetric } from '../api'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -13,7 +14,7 @@ describe('PerformanceTab', () => {
       { id: 'm1', metric_type: 'web-vital', metric_name: 'LCP', value: 2500, rating: 'good', created_at: '2026-01-02' },
       { id: 'm2', metric_type: 'web-vital', metric_name: 'LCP', value: 9000, rating: 'poor', created_at: '2026-01-01' },
       { id: 'm3', metric_type: 'query', metric_name: 'reports.loadAll', value: 1500, path: '/reports', created_at: '2026-01-02' },
-    ])
+    ] as unknown as PerformanceMetric[])
 
     render(<PerformanceTab />)
 

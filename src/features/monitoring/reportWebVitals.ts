@@ -1,11 +1,11 @@
-import { onCLS, onFCP, onINP, onLCP, onTTFB } from 'web-vitals'
+import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from 'web-vitals'
 import { logMetric } from './api'
 
 // Wires the web-vitals library's callbacks to logMetric. Call once, at app
 // startup. Each callback fires once per metric per page load (web-vitals
 // handles the "only when finalized" timing itself).
 export function reportWebVitals() {
-  function report(metric) {
+  function report(metric: Metric) {
     logMetric({
       metricType: 'web-vital',
       metricName: metric.name,

@@ -11,6 +11,12 @@ vi.mock('web-vitals', () => ({
   onTTFB: vi.fn(),
 }))
 
+const mockOnCLS = vi.mocked(onCLS)
+const mockOnFCP = vi.mocked(onFCP)
+const mockOnINP = vi.mocked(onINP)
+const mockOnLCP = vi.mocked(onLCP)
+const mockOnTTFB = vi.mocked(onTTFB)
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -18,7 +24,7 @@ afterEach(() => {
 describe('reportWebVitals', () => {
   it('registers a callback with every web-vitals metric', () => {
     reportWebVitals()
-    for (const fn of [onCLS, onFCP, onINP, onLCP, onTTFB]) {
+    for (const fn of [mockOnCLS, mockOnFCP, mockOnINP, mockOnLCP, mockOnTTFB]) {
       expect(fn).toHaveBeenCalledTimes(1)
       expect(fn).toHaveBeenCalledWith(expect.any(Function))
     }
@@ -28,7 +34,7 @@ describe('reportWebVitals', () => {
     vi.spyOn(api, 'logMetric').mockResolvedValue()
     reportWebVitals()
 
-    const callback = onLCP.mock.calls[0][0]
+    const callback = mockOnLCP.mock.calls[0][0] as (metric: any) => void
     callback({ name: 'LCP', value: 2500, rating: 'good', navigationType: 'navigate' })
 
     expect(api.logMetric).toHaveBeenCalledWith({

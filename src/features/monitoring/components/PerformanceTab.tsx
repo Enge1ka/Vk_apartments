@@ -1,13 +1,14 @@
 import { Card, CardContent } from '@/shared/ui/Card'
 import { Badge } from '@/shared/ui/Badge'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
-import { listMetrics } from '../api'
+import { listMetrics, type MetricRating, type PerformanceMetric } from '../api'
+import type { BadgeVariant } from '@/shared/constants/status'
 import { Gauge, Zap } from 'lucide-react'
 
-const RATING_VARIANT = { good: 'success', 'needs-improvement': 'warning', poor: 'danger' }
+const RATING_VARIANT: Record<MetricRating, BadgeVariant> = { good: 'success', 'needs-improvement': 'warning', poor: 'danger' }
 
-function latestPerName(metrics) {
-  const seen = new Map()
+function latestPerName(metrics: PerformanceMetric[]): PerformanceMetric[] {
+  const seen = new Map<string, PerformanceMetric>()
   for (const m of metrics) {
     if (!seen.has(m.metric_name)) seen.set(m.metric_name, m)
   }
