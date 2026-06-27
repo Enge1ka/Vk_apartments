@@ -17,19 +17,19 @@ const apartmentStepSchema = z
     path: ['check_out_date'],
   })
 
-function toFieldErrors(zodError) {
-  const errors = {}
-  for (const issue of zodError.issues) errors[issue.path[0]] = issue.message
+function toFieldErrors(zodError: z.ZodError): Record<string, string> {
+  const errors: Record<string, string> = {}
+  for (const issue of zodError.issues) errors[String(issue.path[0])] = issue.message
   return errors
 }
 
-export function validateClientStep(form) {
+export function validateClientStep(form: unknown): { valid: boolean; errors: Record<string, string> } {
   const result = clientStepSchema.safeParse(form)
   if (result.success) return { valid: true, errors: {} }
   return { valid: false, errors: toFieldErrors(result.error) }
 }
 
-export function validateApartmentStep(form) {
+export function validateApartmentStep(form: unknown): { valid: boolean; errors: Record<string, string> } {
   const result = apartmentStepSchema.safeParse(form)
   if (result.success) return { valid: true, errors: {} }
   return { valid: false, errors: toFieldErrors(result.error) }
@@ -37,15 +37,15 @@ export function validateApartmentStep(form) {
 
 // The initial-payment step allows 0 (meaning "record as unpaid for now"),
 // unlike a later payment against an existing balance which must be > 0 —
-// see features/payments/validators.js for that case.
-export function validateInitialPayment(amountToPay, totalAmount) {
+// see features/payments/validators.ts for that case.
+export function validateInitialPayment(amountToPay: string | number, totalAmount: number): { valid: boolean; error: string | null } {
   const amount = Number(amountToPay) || 0
   if (amount < 0) return { valid: false, error: 'Payment cannot be negative' }
   if (amount > totalAmount) return { valid: false, error: 'Payment cannot exceed the total amount' }
   return { valid: true, error: null }
 }
 
-export function validateCancellationReason(reason) {
+export function validateCancellationReason(reason?: string | null): { valid: boolean; value: string | null; error: string | null } {
   const trimmed = reason?.trim()
   if (!trimmed) return { valid: false, value: null, error: 'Enter a cancellation reason' }
   return { valid: true, value: trimmed, error: null }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/features/auth/useAuth'
 import { Button } from '@/shared/ui/Button'
@@ -11,15 +11,31 @@ import { downloadReceipt } from '@/shared/lib/receiptGenerator'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { APARTMENT_STATUS, PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
-import { listApartments } from '@/features/apartments/api'
-import { listLocations } from '@/features/locations/api'
+import { listApartments, type Apartment } from '@/features/apartments/api'
+import { listLocations, type Location } from '@/features/locations/api'
 import { recordPayment } from '@/features/payments/api'
 import { createBooking, hasOverlappingBooking } from '../api'
 import { validateApartmentStep, validateClientStep, validateInitialPayment } from '../validators'
 
 const STEPS = ['Client', 'Apartment', 'Payment', 'Confirm']
 
-const EMPTY = {
+interface NewBookingFormState {
+  full_name: string
+  nrc_or_passport: string
+  phone: string
+  email: string
+  company: string
+  location_id: string
+  apartment_id: string
+  check_in_date: string
+  check_out_date: string
+  rate_per_day: string
+  amount_to_pay: string
+  payment_method: string
+  notes: string
+}
+
+const EMPTY: NewBookingFormState = {
   full_name: '', nrc_or_passport: '', phone: '', email: '', company: '',
   location_id: '', apartment_id: '', check_in_date: '', check_out_date: '',
   rate_per_day: '', amount_to_pay: '', payment_method: PAYMENT_METHOD.CASH, notes: '',
@@ -29,10 +45,10 @@ export default function NewBookingPage() {
   const { user, isRestricted, locationId } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState(EMPTY)
-  const [errors, setErrors] = useState({})
-  const [locations, setLocations] = useState([])
-  const [apartments, setApartments] = useState([])
+  const [form, setForm] = useState<NewBookingFormState>(EMPTY)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [locations, setLocations] = useState<Location[]>([])
+  const [apartments, setApartments] = useState<Apartment[]>([])
   const [saving, setSaving] = useState(false)
 
   const days = calcDays(form.check_in_date, form.check_out_date)
@@ -57,18 +73,18 @@ export default function NewBookingPage() {
   useEffect(() => {
     if (!form.apartment_id) return
     const apt = apartments.find(a => a.id === form.apartment_id)
-    if (apt) set('rate_per_day', apt.daily_rate)
+    if (apt) set('rate_per_day', String(apt.daily_rate))
   }, [form.apartment_id, apartments])
 
-  function set(key, val) {
+  function set(key: keyof NewBookingFormState, val: string) {
     setForm(f => ({ ...f, [key]: val }))
   }
 
-  function field(key) {
-    return { value: form[key], onChange: (e) => set(key, e.target.value) }
+  function field(key: keyof NewBookingFormState) {
+    return { value: form[key], onChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => set(key, e.target.value) }
   }
 
-  function validateStep() {
+  function validateStep(): boolean {
     if (step === 0) {
       const result = validateClientStep(form)
       setErrors(result.errors)
@@ -83,7 +99,7 @@ export default function NewBookingPage() {
     }
     if (step === 2) {
       const result = validateInitialPayment(form.amount_to_pay, totalAmount)
-      if (!result.valid) toast.error(result.error)
+      if (!result.valid) toast.error(result.error ?? 'Invalid amount')
       return result.valid
     }
     return true
@@ -125,13 +141,18 @@ export default function NewBookingPage() {
       })
     } catch (err) {
       setSaving(false)
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
       return
     }
 
     if (amountPaid > 0) {
       try {
-        const payment = await recordPayment({ bookingId: booking.bookingId, amount: amountPaid, paymentMethod: form.payment_method })
+        const payment = await recordPayment({
+          bookingId: booking.bookingId,
+          amount: amountPaid,
+          paymentDate: new Date().toISOString().split('T')[0],
+          paymentMethod: form.payment_method,
+        })
         const apt = apartments.find(a => a.id === form.apartment_id)
         downloadReceipt({
           receiptNumber: payment.receipt_number,
@@ -265,7 +286,7 @@ export default function NewBookingPage() {
             )}
             {days > 0 && (
               <div className="bg-blue-50 rounded-xl p-3 text-sm">
-                <p className="text-blue-700"><strong>{days} nights</strong> × {formatCurrency(form.rate_per_day)}/day = <strong>{formatCurrency(totalAmount)}</strong></p>
+                <p className="text-blue-700"><strong>{days} nights</strong> × {formatCurrency(Number(form.rate_per_day))}/day = <strong>{formatCurrency(totalAmount)}</strong></p>
               </div>
             )}
           </CardContent>
@@ -312,7 +333,7 @@ export default function NewBookingPage() {
               <Row label="Check-in" value={form.check_in_date} />
               <Row label="Check-out" value={form.check_out_date} />
               <Row label="Nights" value={days} />
-              <Row label="Rate/Day" value={formatCurrency(form.rate_per_day)} />
+              <Row label="Rate/Day" value={formatCurrency(Number(form.rate_per_day))} />
               <div className="border-t border-gray-100 my-2" />
               <Row label="Total Amount" value={formatCurrency(totalAmount)} bold />
               <Row label="Paying Now" value={formatCurrency(Number(form.amount_to_pay) || 0)} />
@@ -343,7 +364,7 @@ export default function NewBookingPage() {
   )
 }
 
-function Row({ label, value, bold }) {
+function Row({ label, value, bold }: { label: string; value?: string | number | null; bold?: boolean }) {
   return (
     <div className="flex justify-between">
       <span className="text-gray-500">{label}</span>

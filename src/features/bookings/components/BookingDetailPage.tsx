@@ -9,37 +9,51 @@ import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
 import { Input } from '@/shared/ui/Input'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
-import { downloadReceipt, shareReceiptWhatsApp } from '@/shared/lib/receiptGenerator'
+import { downloadReceipt, shareReceiptWhatsApp, type ReceiptData } from '@/shared/lib/receiptGenerator'
 import { AlertTriangle, ChevronLeft, Download, Share2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
+import type { BookingStatus } from '@/shared/constants/status'
 import { cancelBooking, updateBookingStatus } from '../api'
 import { recordPayment } from '@/features/payments/api'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
 import { useBookingDetail } from '../useBookingDetail'
 
+interface ReceiptablePayment {
+  receipt_number: string
+  payment_date: string
+  payment_method: string
+}
+
 export default function BookingDetailPage() {
-  const { id } = useParams()
+  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user, isAdmin, isRestricted, locationId, authReady } = useAuth()
-  const { booking, payments, accessDenied, loading, refetch } = useBookingDetail(id, { isRestricted, locationId, authReady })
+  const { booking: rawBooking, payments, accessDenied, loading, refetch } = useBookingDetail(id!, { isRestricted, locationId, authReady })
 
   const [payDialog, setPayDialog] = useState(false)
   const [statusDialog, setStatusDialog] = useState(false)
   const [cancelDialog, setCancelDialog] = useState(false)
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'cash' })
-  const [payError, setPayError] = useState(null)
-  const [newStatus, setNewStatus] = useState('')
+  const [payError, setPayError] = useState<string | null>(null)
+  const [newStatus, setNewStatus] = useState<string>('')
   const [cancelReason, setCancelReason] = useState('')
-  const [cancelError, setCancelError] = useState(null)
+  const [cancelError, setCancelError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (accessDenied) navigate('/bookings')
   }, [accessDenied, navigate])
 
-  function receiptPayload(payment, amountPaid, outstandingBalance) {
+  if (loading) return <div className="p-4 text-center text-gray-400 py-16">Loading…</div>
+  if (!rawBooking) return <div className="p-4 text-center text-gray-400 py-16">Booking not found</div>
+  // Closures below don't inherit the narrowing from the check above (TS
+  // doesn't propagate flow narrowing into nested function bodies) — this
+  // const has a fixed, already-non-null type instead.
+  const booking = rawBooking
+
+  function receiptPayload(payment: ReceiptablePayment, amountPaid: number, outstandingBalance: number): ReceiptData {
     return {
       receiptNumber: payment.receipt_number,
       paymentDate: payment.payment_date,
@@ -70,23 +84,23 @@ export default function BookingDetailPage() {
     setSaving(true)
     try {
       const data = await recordPayment({
-        bookingId: id,
-        amount: value,
+        bookingId: id!,
+        amount: value!,
         paymentMethod: payForm.payment_method,
         paymentDate: new Date().toISOString().split('T')[0],
       })
       toast.success(`Payment recorded — ${data.receipt_number}`)
       downloadReceipt(receiptPayload(
         { receipt_number: data.receipt_number, payment_date: new Date().toISOString().split('T')[0], payment_method: payForm.payment_method },
-        value,
-        (booking.outstanding_balance || 0) - value,
+        value!,
+        (booking.outstanding_balance || 0) - value!,
       ))
       setPayDialog(false)
       setPayForm({ amount: '', payment_method: 'cash' })
       setPayError(null)
       refetch()
     } catch (err) {
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
@@ -100,12 +114,12 @@ export default function BookingDetailPage() {
     }
     setSaving(true)
     try {
-      await updateBookingStatus(id, newStatus)
+      await updateBookingStatus(id!, newStatus as BookingStatus)
       toast.success('Status updated')
       setStatusDialog(false)
       refetch()
     } catch (err) {
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
@@ -122,29 +136,26 @@ export default function BookingDetailPage() {
 
     setSaving(true)
     try {
-      await cancelBooking(id, value, user?.email, booking.notes)
+      await cancelBooking(id!, value!, user?.email, booking.notes)
       toast.success('Booking cancelled and apartment released')
       setCancelDialog(false)
       setCancelReason('')
       setCancelError(null)
       refetch()
     } catch (err) {
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
   }
 
-  function handleDownloadReceipt(payment) {
+  function handleDownloadReceipt(payment: ReceiptablePayment & { amount: number }) {
     downloadReceipt(receiptPayload(payment, payment.amount, booking.outstanding_balance))
   }
 
-  function handleShareReceipt(payment) {
+  function handleShareReceipt(payment: ReceiptablePayment & { amount: number }) {
     shareReceiptWhatsApp(receiptPayload(payment, payment.amount, booking.outstanding_balance), booking.client?.phone)
   }
-
-  if (loading) return <div className="p-4 text-center text-gray-400 py-16">Loading…</div>
-  if (!booking) return <div className="p-4 text-center text-gray-400 py-16">Booking not found</div>
 
   const sb = getBadge(BOOKING_STATUS_BADGE, booking.booking_status)
 
@@ -320,7 +331,7 @@ export default function BookingDetailPage() {
   )
 }
 
-function Row({ label, value, bold }) {
+function Row({ label, value, bold }: { label: string; value: string | number; bold?: boolean }) {
   return (
     <div className="flex justify-between">
       <span className="text-gray-500">{label}</span>

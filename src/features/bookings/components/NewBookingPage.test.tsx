@@ -5,18 +5,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import NewBookingPage from './NewBookingPage'
 import * as authHook from '@/features/auth/useAuth'
 import * as locationsApi from '@/features/locations/api'
+import type { Location } from '@/features/locations/api'
 import * as apartmentsApi from '@/features/apartments/api'
+import type { Apartment } from '@/features/apartments/api'
 import * as bookingsApi from '../api'
 
-const LOCATIONS = [{ id: 'loc-1', name: 'Nkana East' }]
-const APARTMENTS = [{ id: 'apt-1', apartment_number: 'A01', type: 'Studio', daily_rate: 100 }]
+const LOCATIONS = [{ id: 'loc-1', name: 'Nkana East' }] as Location[]
+const APARTMENTS = [{ id: 'apt-1', apartment_number: 'A01', type: 'Studio', daily_rate: 100 }] as Apartment[]
 
 function setup() {
+  // Partial mock of useAuth's return shape — only the fields this page reads.
   vi.spyOn(authHook, 'useAuth').mockReturnValue({
     user: { id: 'user-1', email: 'staff@vk.com' },
     isRestricted: false,
     locationId: null,
-  })
+  } as unknown as ReturnType<typeof authHook.useAuth>)
   vi.spyOn(locationsApi, 'listLocations').mockResolvedValue(LOCATIONS)
   vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue(APARTMENTS)
   return render(<MemoryRouter><NewBookingPage /></MemoryRouter>)

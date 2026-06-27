@@ -24,7 +24,7 @@ export default function BookingsPage() {
     return listBookings({
       status: filterStatus || undefined,
       paymentStatus: filterPayment || undefined,
-      locationId: isRestricted ? locationId : undefined,
+      locationId: isRestricted ? (locationId ?? undefined) : undefined,
     })
   }, [isRestricted, locationId, filterStatus, filterPayment], 'bookings.listBookings')
 

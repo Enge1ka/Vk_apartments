@@ -54,4 +54,14 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': 'warn',
     },
   },
+  {
+    // Test files legitimately fake third-party generics (Supabase's
+    // deeply-generic Postgrest builder types) that aren't worth typing
+    // precisely just to satisfy a mock — `any` here doesn't weaken the
+    // production code's type safety, which is what actually matters.
+    files: ['**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
 ])

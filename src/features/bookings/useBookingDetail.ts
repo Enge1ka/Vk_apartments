@@ -2,10 +2,16 @@ import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { getBooking } from './api'
 import { listPaymentsForBooking } from '@/features/payments/api'
 
+interface UseBookingDetailArgs {
+  isRestricted: boolean
+  locationId: string | null
+  authReady: boolean
+}
+
 // Waits for auth to resolve before fetching (isRestricted/locationId aren't
 // reliable until the profile loads), then enforces location-scoped access
 // for restricted staff before loading payment history.
-export function useBookingDetail(id, { isRestricted, locationId, authReady }) {
+export function useBookingDetail(id: string, { isRestricted, locationId, authReady }: UseBookingDetailArgs) {
   const { data, loading, error, refetch } = useSupabaseQuery(async () => {
     if (!authReady) return null
     const booking = await getBooking(id)
