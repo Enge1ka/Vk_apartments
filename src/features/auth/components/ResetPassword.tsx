@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { onAuthStateChange, signOut, updatePassword } from '../api'
 import { Button } from '@/shared/ui/Button'
@@ -38,7 +38,7 @@ export default function ResetPassword() {
   // Don't show expired if ready already fired
   const showExpired = expired && !ready
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (password !== confirm) {
       toast.error('Passwords do not match')

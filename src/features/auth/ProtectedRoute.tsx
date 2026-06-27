@@ -1,7 +1,13 @@
+import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from './store'
 
-export function ProtectedRoute({ children, adminOnly = false }) {
+interface ProtectedRouteProps {
+  children: ReactNode
+  adminOnly?: boolean
+}
+
+export function ProtectedRoute({ children, adminOnly = false }: ProtectedRouteProps) {
   const { user, profile, authReady } = useAuthStore()
 
   if (!authReady) {

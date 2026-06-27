@@ -1,8 +1,10 @@
+import type { Session, User } from '@supabase/supabase-js'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from './useAuth'
 import { useAuthStore } from './store'
 import * as api from './api'
+import type { Profile } from './api'
 
 afterEach(() => {
   useAuthStore.setState({ user: null, profile: null, authReady: false })
@@ -11,7 +13,9 @@ afterEach(() => {
 
 function mockAuthStateChange() {
   const unsubscribe = vi.fn()
-  vi.spyOn(api, 'onAuthStateChange').mockReturnValue({ data: { subscription: { unsubscribe } } })
+  vi.spyOn(api, 'onAuthStateChange').mockReturnValue({
+    data: { subscription: { unsubscribe } },
+  } as unknown as ReturnType<typeof api.onAuthStateChange>)
   return unsubscribe
 }
 
@@ -28,9 +32,9 @@ describe('useAuth', () => {
   })
 
   it('loads the profile and derives isAdmin/locationId when a session exists', async () => {
-    const user = { id: 'user-1' }
-    vi.spyOn(api, 'getSession').mockResolvedValue({ user })
-    vi.spyOn(api, 'getProfile').mockResolvedValue({ role: 'admin', location_id: 'loc-1' })
+    const user = { id: 'user-1' } as User
+    vi.spyOn(api, 'getSession').mockResolvedValue({ user } as Session)
+    vi.spyOn(api, 'getProfile').mockResolvedValue({ role: 'admin', location_id: 'loc-1' } as Profile)
     mockAuthStateChange()
 
     const { result } = renderHook(() => useAuth())
@@ -69,7 +73,7 @@ describe('useAuth', () => {
       await vi.advanceTimersByTimeAsync(8000)
     })
 
-    useAuthStore.setState({ user: { id: 'user-1' } })
+    useAuthStore.setState({ user: { id: 'user-1' } as User })
 
     const signOutPromise = act(async () => {
       const p = result.current.signOut()

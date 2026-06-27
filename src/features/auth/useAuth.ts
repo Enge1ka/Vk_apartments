@@ -11,7 +11,7 @@ import {
 export function useAuth() {
   const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAuthStore()
 
-  async function fetchProfile(userId) {
+  async function fetchProfile(userId: string) {
     const data = await getProfile(userId)
     if (data) setProfile(data)
   }
@@ -37,7 +37,7 @@ export function useAuth() {
     return () => subscription.unsubscribe()
   }, [])
 
-  async function signIn(email, password) {
+  async function signIn(email: string, password: string) {
     const { data, error } = await signInWithPassword(email, password)
     return { data, error }
   }
@@ -47,7 +47,7 @@ export function useAuth() {
       // Don't let a hanging Supabase request block the user from being signed out locally.
       await Promise.race([
         signOutApi(),
-        new Promise((resolve) => setTimeout(resolve, 5000)),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
       ])
     } finally {
       clearUser()

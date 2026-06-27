@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { sendPasswordResetEmail } from '../api'
 import { Button } from '@/shared/ui/Button'
@@ -12,7 +12,7 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
     const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin
