@@ -3,14 +3,14 @@ import { emitMetric } from '@/shared/lib/metrics'
 
 // Replaces the repeated `useState(loading/error/data) + useEffect` pattern
 // that was hand-rolled in every page (see useApartments/useBookings, which
-// this mirrors). `queryFn` is an async function (usually a feature's api.js
+// this mirrors). `queryFn` is an async function (usually a feature's api.ts
 // call) re-run whenever `deps` change. `label` identifies this query in
-// performance metrics (see shared/lib/metrics.js) — pass a descriptive,
+// performance metrics (see shared/lib/metrics.ts) — pass a descriptive,
 // stable name so a slow-query warning is actionable instead of anonymous.
-export function useSupabaseQuery(queryFn, deps = [], label = 'unlabeled-query') {
-  const [data, setData] = useState(null)
+export function useSupabaseQuery<T>(queryFn: () => Promise<T>, deps: unknown[] = [], label = 'unlabeled-query') {
+  const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
     fetchData()
@@ -20,13 +20,13 @@ export function useSupabaseQuery(queryFn, deps = [], label = 'unlabeled-query') 
   async function fetchData() {
     setLoading(true)
     const start = performance.now()
-    let status = 'success'
+    let status: 'success' | 'error' = 'success'
     try {
       const result = await queryFn()
       setData(result)
       setError(null)
     } catch (err) {
-      setError(err)
+      setError(err instanceof Error ? err : new Error(String(err)))
       status = 'error'
     } finally {
       setLoading(false)

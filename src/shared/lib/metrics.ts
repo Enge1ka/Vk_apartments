@@ -6,14 +6,24 @@
 
 export const SLOW_QUERY_THRESHOLD_MS = 1000
 
-const listeners = new Set()
+export interface MetricEvent {
+  type: string
+  name: string
+  durationMs: number
+  status?: 'success' | 'error'
+  path?: string
+}
 
-export function onMetric(callback) {
+type MetricListener = (event: MetricEvent) => void
+
+const listeners = new Set<MetricListener>()
+
+export function onMetric(callback: MetricListener): () => void {
   listeners.add(callback)
   return () => listeners.delete(callback)
 }
 
-export function emitMetric(event) {
+export function emitMetric(event: MetricEvent): void {
   if (event.type === 'query' && event.durationMs > SLOW_QUERY_THRESHOLD_MS) {
     console.warn(`[slow query] ${event.name} took ${Math.round(event.durationMs)}ms`)
   }

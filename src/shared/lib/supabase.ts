@@ -9,6 +9,9 @@ if (!isSupabaseConfigured) {
   console.warn('Supabase environment variables not set. Check your .env file.')
 }
 
+// TODO: once src/shared/types/database.types.ts exists (npm run gen:types),
+// switch to createClient<Database>(...) so every .from('table') call below
+// this point in the app is typed against the real schema.
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-key'

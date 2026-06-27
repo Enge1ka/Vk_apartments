@@ -1,7 +1,27 @@
 import jsPDF from 'jspdf'
 import { formatCurrency, formatDate } from './bookingUtils'
 
-export function generateReceiptPDF(data) {
+export interface ReceiptData {
+  receiptNumber?: string
+  paymentDate?: string | null
+  clientName?: string | null
+  clientPhone?: string | null
+  clientNRC?: string | null
+  apartmentNumber?: string | null
+  location?: string | null
+  checkIn?: string | null
+  checkOut?: string | null
+  numberOfDays?: number | null
+  ratePerDay?: number | null
+  totalAmount?: number | null
+  amountPaid?: number | null
+  outstandingBalance?: number | null
+  paymentMethod?: string | null
+  staffName?: string | null
+  bookingRef?: string | null
+}
+
+export function generateReceiptPDF(data: ReceiptData): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a5' })
   const pw = doc.internal.pageSize.getWidth()
 
@@ -20,7 +40,7 @@ export function generateReceiptPDF(data) {
   doc.setTextColor(0, 0, 0)
   let y = 35
 
-  const line = (label, value, bold = false) => {
+  const line = (label: string, value: unknown, bold = false) => {
     doc.setFontSize(9)
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.text(label, 12, y)
@@ -65,12 +85,12 @@ export function generateReceiptPDF(data) {
   return doc
 }
 
-export function downloadReceipt(data) {
+export function downloadReceipt(data: ReceiptData): void {
   const doc = generateReceiptPDF(data)
   doc.save(`Receipt-${data.receiptNumber}.pdf`)
 }
 
-export function shareReceiptWhatsApp(data, phone) {
+export function shareReceiptWhatsApp(data: ReceiptData, phone?: string | null): void {
   const text = `*VK Luxurious Apartments*\nReceipt: ${data.receiptNumber}\nClient: ${data.clientName}\nApartment: ${data.apartmentNumber} (${data.location})\nCheck-in: ${formatDate(data.checkIn)} → Check-out: ${formatDate(data.checkOut)}\nTotal: ${formatCurrency(data.totalAmount)}\nPaid: ${formatCurrency(data.amountPaid)}\nBalance: ${formatCurrency(data.outstandingBalance)}\nThank you!`
   const encoded = encodeURIComponent(text)
   const cleaned = phone?.replace(/\D/g, '')

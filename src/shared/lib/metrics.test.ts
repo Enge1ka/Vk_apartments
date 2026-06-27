@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { emitMetric, onMetric, SLOW_QUERY_THRESHOLD_MS } from './metrics'
+import { emitMetric, onMetric, SLOW_QUERY_THRESHOLD_MS, type MetricEvent } from './metrics'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -7,7 +7,7 @@ afterEach(() => {
 
 describe('onMetric / emitMetric', () => {
   it('delivers emitted events to subscribers', () => {
-    const received = []
+    const received: MetricEvent[] = []
     const unsubscribe = onMetric((event) => received.push(event))
 
     emitMetric({ type: 'query', name: 'listBookings', durationMs: 50 })
@@ -17,7 +17,7 @@ describe('onMetric / emitMetric', () => {
   })
 
   it('stops delivering events after unsubscribe', () => {
-    const received = []
+    const received: MetricEvent[] = []
     const unsubscribe = onMetric((event) => received.push(event))
     unsubscribe()
 

@@ -1,16 +1,22 @@
-import { createContext, useContext, useEffect, useId, useRef } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { X } from 'lucide-react'
 
-const DialogTitleContext = createContext(undefined)
+const DialogTitleContext = createContext<string | undefined>(undefined)
 
-export function Dialog({ open, onClose, children }) {
+interface DialogProps {
+  open: boolean
+  onClose?: () => void
+  children: ReactNode
+}
+
+export function Dialog({ open, onClose, children }: DialogProps) {
   const titleId = useId()
-  const panelRef = useRef(null)
-  const triggerRef = useRef(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose?.() }
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
     if (open) document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
@@ -19,7 +25,7 @@ export function Dialog({ open, onClose, children }) {
   // whatever triggered it when it closes, since this is a custom (non-<dialog>) overlay.
   useEffect(() => {
     if (open) {
-      triggerRef.current = document.activeElement
+      triggerRef.current = document.activeElement as HTMLElement | null
       panelRef.current?.focus()
     } else {
       triggerRef.current?.focus?.()
@@ -46,7 +52,11 @@ export function Dialog({ open, onClose, children }) {
   )
 }
 
-export function DialogHeader({ className, children, onClose }) {
+interface DialogHeaderProps extends ComponentPropsWithoutRef<'div'> {
+  onClose?: () => void
+}
+
+export function DialogHeader({ className, children, onClose }: DialogHeaderProps) {
   return (
     <div className={cn('flex items-center justify-between p-5 border-b border-gray-100', className)}>
       <div className="flex-1">{children}</div>
@@ -59,15 +69,15 @@ export function DialogHeader({ className, children, onClose }) {
   )
 }
 
-export function DialogTitle({ className, children }) {
+export function DialogTitle({ className, children }: ComponentPropsWithoutRef<'h2'>) {
   const titleId = useContext(DialogTitleContext)
   return <h2 id={titleId} className={cn('text-lg font-semibold text-gray-900', className)}>{children}</h2>
 }
 
-export function DialogContent({ className, children }) {
+export function DialogContent({ className, children }: ComponentPropsWithoutRef<'div'>) {
   return <div className={cn('p-5', className)}>{children}</div>
 }
 
-export function DialogFooter({ className, children }) {
+export function DialogFooter({ className, children }: ComponentPropsWithoutRef<'div'>) {
   return <div className={cn('flex gap-3 p-5 pt-0', className)}>{children}</div>
 }

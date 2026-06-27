@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSupabaseQuery } from './useSupabaseQuery'
-import { onMetric } from '@/shared/lib/metrics'
+import { onMetric, type MetricEvent } from '@/shared/lib/metrics'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -41,7 +41,7 @@ describe('useSupabaseQuery', () => {
   })
 
   it('emits a query metric with the given label and a success status', async () => {
-    const events = []
+    const events: MetricEvent[] = []
     const unsubscribe = onMetric((e) => events.push(e))
 
     const queryFn = vi.fn().mockResolvedValue('ok')
@@ -55,7 +55,7 @@ describe('useSupabaseQuery', () => {
   })
 
   it('emits an error status when the query rejects', async () => {
-    const events = []
+    const events: MetricEvent[] = []
     const unsubscribe = onMetric((e) => events.push(e))
 
     const queryFn = vi.fn().mockRejectedValue(new Error('boom'))
@@ -67,7 +67,7 @@ describe('useSupabaseQuery', () => {
   })
 
   it('defaults to an "unlabeled-query" label when none is given', async () => {
-    const events = []
+    const events: MetricEvent[] = []
     const unsubscribe = onMetric((e) => events.push(e))
 
     const queryFn = vi.fn().mockResolvedValue('ok')
