@@ -43,12 +43,12 @@ function ConfigurationRequired() {
           <p className="text-gray-400 text-xs mb-1">Vite / standard:</p>
           <p>VITE_SUPABASE_URL</p>
           <p>VITE_SUPABASE_ANON_KEY</p>
-          <p className="text-gray-400 text-xs mt-3 mb-1">Next.js / Netlify:</p>
+          <p className="text-gray-400 text-xs mt-3 mb-1">Vercel Supabase integration:</p>
           <p>NEXT_PUBLIC_SUPABASE_URL</p>
           <p>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</p>
         </div>
         <p className="mt-4 text-xs text-gray-500">
-          For local development, copy .env.example to .env and fill in the values. For Netlify, add them in Site settings.
+          For local development, copy .env.example to .env and fill in the values. For Vercel, add them in Project Settings → Environment Variables.
         </p>
       </div>
     </div>

@@ -84,20 +84,18 @@ npm run build
 npm run preview
 ```
 
-## Deploy To Netlify
+## Deploy To Vercel
 
-This repo includes `netlify.toml` with the Vite build command and SPA redirects.
+This repo includes `vercel.json` with the SPA rewrite and a `www` → apex
+redirect for `vkbooking.com`. Vercel auto-detects the Vite build command
+and output directory (`npm run build` / `dist`).
 
-Before publishing, add these environment variables in Netlify:
+Before publishing, add these environment variables in the Vercel project
+settings (Production and Preview):
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-Then deploy:
-
-```bash
-npx netlify deploy
-npx netlify deploy --prod
-```
-
-Use the preview deploy first, confirm login and database access, then publish to production.
+Push to `main` (or open a PR) and Vercel builds and deploys automatically.
+Confirm login and database access on the preview deployment before it
+promotes to production.

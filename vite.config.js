@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     // Opt-in only (ANALYZE=true npm run build) — writes dist/stats.html.
-    // Must not run on every production build: Netlify/Vercel publish the
+    // Must not run on every production build: Vercel publishes the
     // whole dist/ folder, so an always-on stats.html would be a publicly
     // reachable bundle/dependency breakdown at your real domain.
     process.env.ANALYZE && visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
