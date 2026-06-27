@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
+import type { EventClickArg } from '@fullcalendar/core'
 import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
 import { useAuth } from '@/features/auth/useAuth'
@@ -31,7 +32,7 @@ export default function CalendarPage() {
   const locations = data?.locations ?? []
   const bookings = data?.bookings ?? []
 
-  const colorMap = {}
+  const colorMap: Record<string, string> = {}
   locations.forEach((loc, i) => { colorMap[loc.id] = LOCATION_COLORS[i % LOCATION_COLORS.length] })
 
   const events = bookings.map(b => ({
@@ -39,12 +40,12 @@ export default function CalendarPage() {
     title: `${b.apartment?.apartment_number} · ${b.client?.full_name}`,
     start: b.check_in_date,
     end: b.check_out_date,
-    backgroundColor: colorMap[b.apartment?.location_id] || '#1e3a5f',
+    backgroundColor: (b.apartment?.location_id && colorMap[b.apartment.location_id]) || '#1e3a5f',
     borderColor: 'transparent',
     extendedProps: { bookingId: b.id },
   }))
 
-  function handleEventClick({ event }) {
+  function handleEventClick({ event }: EventClickArg) {
     navigate(`/bookings/${event.extendedProps.bookingId}`)
   }
 
