@@ -2,7 +2,9 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useApartmentsPage } from './useApartmentsPage'
 import * as apartmentsApi from './api'
+import type { Apartment } from './api'
 import * as locationsApi from '@/features/locations/api'
+import type { Location } from '@/features/locations/api'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -10,8 +12,8 @@ afterEach(() => {
 
 describe('useApartmentsPage', () => {
   it('loads apartments and locations together', async () => {
-    vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue([{ id: 'apt-1' }])
-    vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([{ id: 'loc-1' }])
+    vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue([{ id: 'apt-1' } as Apartment])
+    vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([{ id: 'loc-1' } as Location])
     vi.spyOn(apartmentsApi, 'subscribeToApartmentChanges').mockReturnValue(() => {})
 
     const { result } = renderHook(() => useApartmentsPage({ isRestricted: false, locationId: null }))
@@ -34,7 +36,7 @@ describe('useApartmentsPage', () => {
   })
 
   it('skips the query entirely for a restricted user with no assigned location', async () => {
-    vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue([{ id: 'should-not-be-returned' }])
+    vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue([{ id: 'should-not-be-returned' } as Apartment])
     vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([])
     vi.spyOn(apartmentsApi, 'subscribeToApartmentChanges').mockReturnValue(() => {})
 

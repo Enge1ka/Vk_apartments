@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import { Button } from '@/shared/ui/Button'
 import { Input } from '@/shared/ui/Input'
 import { Select } from '@/shared/ui/Select'
@@ -8,14 +8,25 @@ import { Plus, Search, Building2, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/features/auth/useAuth'
 import { APARTMENT_STATUS } from '@/shared/constants/status'
-import { createApartment, updateApartment } from '../api'
+import { createApartment, updateApartment, type Apartment } from '../api'
 import { createLocation } from '@/features/locations/api'
 import { validateApartment } from '../validators'
 import { validateLocation } from '@/features/locations/validators'
 import { useApartmentsPage } from '../useApartmentsPage'
 import { ApartmentCard } from './ApartmentCard'
 
-const EMPTY_FORM = {
+interface ApartmentFormState {
+  location_id: string
+  apartment_number: string
+  type: string
+  daily_rate: string
+  weekly_rate: string
+  monthly_rate: string
+  status: string
+  notes: string
+}
+
+const EMPTY_FORM: ApartmentFormState = {
   location_id: '',
   apartment_number: '',
   type: 'Studio',
@@ -35,11 +46,11 @@ export default function ApartmentsPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
-  const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [formErrors, setFormErrors] = useState({})
+  const [editing, setEditing] = useState<Apartment | null>(null)
+  const [form, setForm] = useState<ApartmentFormState>(EMPTY_FORM)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [locationForm, setLocationForm] = useState({ name: '', city: '' })
-  const [locationFormErrors, setLocationFormErrors] = useState({})
+  const [locationFormErrors, setLocationFormErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
   const filtered = apartments.filter(a => {
@@ -49,7 +60,7 @@ export default function ApartmentsPage() {
     return matchSearch && matchLoc && matchStatus
   })
 
-  const grouped = locations.reduce((acc, loc) => {
+  const grouped = locations.reduce<Record<string, { name: string; apts: Apartment[] }>>((acc, loc) => {
     const apts = filtered.filter(a => a.location_id === loc.id)
     if (apts.length > 0 || !filterLocation) acc[loc.id] = { name: loc.name, apts }
     return acc
@@ -58,21 +69,21 @@ export default function ApartmentsPage() {
   function openNew() {
     setEditing(null)
     setFormErrors({})
-    const defaultLoc = isRestricted ? locationId : (locations[0]?.id || '')
+    const defaultLoc = isRestricted ? (locationId ?? '') : (locations[0]?.id || '')
     setForm({ ...EMPTY_FORM, location_id: defaultLoc })
     setDialogOpen(true)
   }
 
-  function openEdit(apt) {
+  function openEdit(apt: Apartment) {
     setEditing(apt)
     setFormErrors({})
     setForm({
       location_id: apt.location_id,
       apartment_number: apt.apartment_number,
       type: apt.type,
-      daily_rate: apt.daily_rate,
-      weekly_rate: apt.weekly_rate || '',
-      monthly_rate: apt.monthly_rate || '',
+      daily_rate: String(apt.daily_rate),
+      weekly_rate: apt.weekly_rate ? String(apt.weekly_rate) : '',
+      monthly_rate: apt.monthly_rate ? String(apt.monthly_rate) : '',
       status: apt.status,
       notes: apt.notes || '',
     })
@@ -101,7 +112,7 @@ export default function ApartmentsPage() {
       else await createApartment(payload)
     } catch (err) {
       setSaving(false)
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
       return
     }
 
@@ -125,7 +136,7 @@ export default function ApartmentsPage() {
       created = await createLocation(data)
     } catch (err) {
       setSaving(false)
-      toast.error(err.message)
+      toast.error(err instanceof Error ? err.message : String(err))
       return
     }
 
@@ -137,10 +148,12 @@ export default function ApartmentsPage() {
     setForm(f => ({ ...f, location_id: created?.id || f.location_id }))
   }
 
-  const field = (key) => ({
-    value: form[key],
-    onChange: (e) => setForm(f => ({ ...f, [key]: e.target.value })),
-  })
+  function field(key: keyof ApartmentFormState) {
+    return {
+      value: form[key],
+      onChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(f => ({ ...f, [key]: e.target.value })),
+    }
+  }
 
   return (
     <div className="p-4 space-y-4">

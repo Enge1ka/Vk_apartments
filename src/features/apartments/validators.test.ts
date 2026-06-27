@@ -16,8 +16,8 @@ describe('validateApartment', () => {
   it('accepts a valid form and coerces rate strings to numbers', () => {
     const result = validateApartment(BASE)
     expect(result.valid).toBe(true)
-    expect(result.data.daily_rate).toBe(150)
-    expect(result.data.weekly_rate).toBeUndefined()
+    expect(result.data?.daily_rate).toBe(150)
+    expect(result.data?.weekly_rate).toBeUndefined()
   })
 
   it('rejects a missing location, apartment number, or daily rate', () => {

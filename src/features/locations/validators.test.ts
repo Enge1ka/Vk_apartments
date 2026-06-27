@@ -11,7 +11,7 @@ describe('validateLocation', () => {
   it('trims whitespace from the name', () => {
     const result = validateLocation({ name: '  Ndola  ', city: '' })
     expect(result.valid).toBe(true)
-    expect(result.data.name).toBe('Ndola')
+    expect(result.data?.name).toBe('Ndola')
   })
 
   it('rejects a missing or blank name', () => {

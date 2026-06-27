@@ -2,8 +2,14 @@ import { Card, CardContent } from '@/shared/ui/Card'
 import { Badge } from '@/shared/ui/Badge'
 import { formatCurrency } from '@/shared/lib/bookingUtils'
 import { APARTMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
+import type { Apartment } from '../api'
 
-export function ApartmentCard({ apt, onEdit }) {
+interface ApartmentCardProps {
+  apt: Apartment
+  onEdit: (apt: Apartment) => void
+}
+
+export function ApartmentCard({ apt, onEdit }: ApartmentCardProps) {
   const badge = getBadge(APARTMENT_STATUS_BADGE, apt.status)
 
   return (

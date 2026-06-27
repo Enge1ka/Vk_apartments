@@ -3,13 +3,18 @@ import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listApartments, subscribeToApartmentChanges } from './api'
 import { listLocations } from '@/features/locations/api'
 
+interface UseApartmentsPageArgs {
+  isRestricted: boolean
+  locationId: string | null
+}
+
 // Combines apartments + locations into one load for the Apartments page,
 // scoped to the caller's location when restricted, with realtime refresh.
-export function useApartmentsPage({ isRestricted, locationId }) {
+export function useApartmentsPage({ isRestricted, locationId }: UseApartmentsPageArgs) {
   const { data, loading, error, refetch } = useSupabaseQuery(async () => {
     if (isRestricted && !locationId) return { apartments: [], locations: [] }
     const [apartments, locations] = await Promise.all([
-      listApartments(isRestricted ? { locationId } : {}),
+      listApartments(isRestricted && locationId ? { locationId } : {}),
       listLocations(),
     ])
     return { apartments, locations }

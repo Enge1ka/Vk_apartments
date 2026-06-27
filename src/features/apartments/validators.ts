@@ -22,11 +22,15 @@ export const apartmentSchema = z.object({
   notes: z.string().trim().optional(),
 })
 
-export function validateApartment(form) {
+export type ApartmentFormInput = z.infer<typeof apartmentSchema>
+
+export function validateApartment(form: unknown):
+  | { valid: true; data: ApartmentFormInput; errors: Record<string, never> }
+  | { valid: false; data: null; errors: Record<string, string> } {
   const result = apartmentSchema.safeParse(form)
   if (result.success) return { valid: true, data: result.data, errors: {} }
 
-  const errors = {}
-  for (const issue of result.error.issues) errors[issue.path[0]] = issue.message
+  const errors: Record<string, string> = {}
+  for (const issue of result.error.issues) errors[String(issue.path[0])] = issue.message
   return { valid: false, data: null, errors }
 }
