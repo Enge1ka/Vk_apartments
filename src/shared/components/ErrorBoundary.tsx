@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { logMetric } from '@/features/monitoring/api'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -17,6 +18,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Unhandled UI error:', error, info)
+    logMetric({
+      metricType: 'error',
+      metricName: error.name || 'Error',
+      value: 1,
+      path: window.location.pathname,
+      metadata: { message: error.message, stack: error.stack, componentStack: info.componentStack },
+    })
   }
 
   render() {

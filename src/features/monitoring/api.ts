@@ -1,6 +1,6 @@
 import { supabase } from '@/shared/lib/supabase'
 
-export type MetricType = 'web-vital' | 'query'
+export type MetricType = 'web-vital' | 'query' | 'error'
 export type MetricRating = 'good' | 'needs-improvement' | 'poor'
 
 export interface PerformanceMetric {

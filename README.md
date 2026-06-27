@@ -31,6 +31,7 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    - `supabase-refactor.sql` — `update_booking_status()` and the booking-overlap exclusion constraint.
    - `supabase-monitoring.sql` — `performance_metrics` table and `log_client_metric()`, used by client-side performance monitoring (see below).
    - `supabase-hardening.sql` — revokes the default `PUBLIC` execute grant on the staff-only RPCs.
+   - `supabase-error-logging.sql` — widens `performance_metrics.metric_type` to accept `error`, used by the `ErrorBoundary` to report uncaught render errors.
 
    See [docs/database.md](docs/database.md) for the full schema reference.
 

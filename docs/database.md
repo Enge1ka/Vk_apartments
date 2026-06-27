@@ -8,6 +8,7 @@ Supabase Postgres. Apply in this order:
 4. `supabase-refactor.sql` — `update_booking_status()`, the booking-overlap exclusion constraint.
 5. `supabase-monitoring.sql` — `performance_metrics` table, `log_client_metric()`.
 6. `supabase-hardening.sql` — revokes the implicit `PUBLIC` execute grant Postgres adds by default on `CREATE FUNCTION`, so the staff-only RPCs are no longer callable by `anon` at the grant level (their own internal checks already rejected anonymous callers; this closes the gap at the database layer too).
+7. `supabase-error-logging.sql` — widens `performance_metrics.metric_type` to also accept `error`, so the React `ErrorBoundary` can report uncaught render errors through `log_client_metric()`.
 
 For typed access to this schema from the app, see
 [src/shared/types/README.md](../src/shared/types/README.md) — types are
@@ -157,12 +158,12 @@ Extends `auth.users`. `role` (`admin` \| `employee`) and `location_id` drive Row
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | |
-| `metric_type` | text | `web-vital` \| `query` (CHECK) |
-| `metric_name` | text | e.g. `LCP`, `CLS`, or a query label like `bookings.listBookings` |
-| `value` | numeric | ms for queries/most web-vitals; unitless score for `CLS` |
-| `rating` | text | `good` \| `needs-improvement` \| `poor` (CHECK) — web-vitals only, null for queries |
+| `metric_type` | text | `web-vital` \| `query` \| `error` (CHECK) |
+| `metric_name` | text | e.g. `LCP`, `CLS`, a query label like `bookings.listBookings`, or the error's `name` |
+| `value` | numeric | ms for queries/most web-vitals; unitless score for `CLS`; always `1` for `error` |
+| `rating` | text | `good` \| `needs-improvement` \| `poor` (CHECK) — web-vitals only, null for queries/errors |
 | `path` | text | route the metric was recorded on |
-| `metadata` | jsonb | e.g. `{ navigationType }` for web-vitals, `{ status }` for queries |
+| `metadata` | jsonb | e.g. `{ navigationType }` for web-vitals, `{ status }` for queries, `{ message, stack, componentStack }` for errors |
 | `recorded_by` | uuid FK → `auth.users.id` | nullable — null for unauthenticated pages (login screen) |
 
 Only `query` metrics that exceed the slow-query threshold (1000ms, see
