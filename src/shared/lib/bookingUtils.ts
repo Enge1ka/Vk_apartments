@@ -3,7 +3,9 @@ import { PAYMENT_STATUS, type PaymentStatus } from '@/shared/constants/status'
 
 export function calcDays(checkIn?: string | null, checkOut?: string | null): number {
   if (!checkIn || !checkOut) return 0
-  return Math.max(0, differenceInDays(new Date(checkOut), new Date(checkIn)))
+  // parseISO (not `new Date()`) to match formatDate's parsing — `new Date('2026-01-10')`
+  // reads as UTC midnight, which can shift a day off in timezones behind UTC.
+  return Math.max(0, differenceInDays(parseISO(checkOut), parseISO(checkIn)))
 }
 
 export function calcTotal(days: number, ratePerDay: number): number {
@@ -11,11 +13,18 @@ export function calcTotal(days: number, ratePerDay: number): number {
 }
 
 export function formatCurrency(amount?: number | null): string {
+  const value = amount ?? 0
+  // `amount || 0` used to also catch NaN (NaN is falsy) and silently print
+  // "K0.00" for corrupt data — surface it instead of hiding it.
+  if (Number.isNaN(value)) {
+    console.error('[formatCurrency] received NaN amount')
+    return '—'
+  }
   return new Intl.NumberFormat('en-ZM', {
     style: 'currency',
     currency: 'ZMW',
     minimumFractionDigits: 2,
-  }).format(amount || 0)
+  }).format(value)
 }
 
 export function formatDate(dateStr?: string | null): string {

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from './SettingsPage'
 import * as authApi from '@/features/auth/api'
 import type { Profile } from '@/features/auth/api'
+import * as authHook from '@/features/auth/useAuth'
 import * as locationsApi from '@/features/locations/api'
 import type { Location } from '@/features/locations/api'
 
@@ -17,9 +18,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function setup() {
+function setup(currentUserId = 'someone-else') {
   vi.spyOn(authApi, 'listProfiles').mockResolvedValue(USERS)
   vi.spyOn(locationsApi, 'listLocations').mockResolvedValue(LOCATIONS)
+  vi.spyOn(authHook, 'useAuth').mockReturnValue({
+    user: { id: currentUserId },
+  } as unknown as ReturnType<typeof authHook.useAuth>)
   return render(<SettingsPage />)
 }
 
@@ -41,6 +45,17 @@ describe('SettingsPage', () => {
     await userEvent.click(toggleButtons[0])
 
     await waitFor(() => expect(authApi.setProfileRole).toHaveBeenCalledWith('u1', 'employee'))
+  })
+
+  it('blocks the sole admin from demoting themselves', async () => {
+    setup('u1') // Alice (u1) is the only admin and is viewing as herself
+    vi.spyOn(authApi, 'setProfileRole').mockResolvedValue()
+    await screen.findByText('Alice Admin')
+
+    const toggleButtons = screen.getAllByText('Toggle role')
+    await userEvent.click(toggleButtons[0])
+
+    expect(authApi.setProfileRole).not.toHaveBeenCalled()
   })
 
   it('adds a new location through the dialog', async () => {

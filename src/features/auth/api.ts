@@ -27,7 +27,8 @@ export function onAuthStateChange(callback: (event: AuthChangeEvent, session: Se
 }
 
 export async function getProfile(userId: string): Promise<Profile | null> {
-  const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+  const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
+  if (error) throw error
   return data
 }
 

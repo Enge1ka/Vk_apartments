@@ -1,7 +1,8 @@
+import { useEffect, useRef } from 'react'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listApartments } from '@/features/apartments/api'
 import { listLocations } from '@/features/locations/api'
-import { listUpcomingCheckIns, listUpcomingCheckOuts } from '@/features/bookings/api'
+import { listUpcomingCheckIns, listUpcomingCheckOuts, subscribeToBookingChanges } from '@/features/bookings/api'
 import { listPayments } from '@/features/payments/api'
 import { APARTMENT_STATUS } from '@/shared/constants/status'
 
@@ -20,7 +21,7 @@ function todayIsoRange(days = 0) {
 // view model. Doesn't own a table itself — every read goes through the
 // owning feature's api.ts.
 export function useDashboardData({ isRestricted, locationId }: UseDashboardDataArgs) {
-  const { data, loading, refetch } = useSupabaseQuery(async () => {
+  const { data, loading, error, refetch } = useSupabaseQuery(async () => {
     const { today, to: in3Days } = todayIsoRange(3)
     const locationFilter = isRestricted && locationId ? locationId : undefined
 
@@ -58,6 +59,12 @@ export function useDashboardData({ isRestricted, locationId }: UseDashboardDataA
     }
   }, [isRestricted, locationId], 'dashboard.loadAll')
 
+  // Stable ref so the realtime subscription (set up once) never calls a
+  // stale closure bound to an old isRestricted/locationId (mirrors useApartmentsPage).
+  const refetchRef = useRef(refetch)
+  useEffect(() => { refetchRef.current = refetch })
+  useEffect(() => subscribeToBookingChanges(() => refetchRef.current()), [])
+
   return {
     stats: data?.stats ?? { total: 0, occupied: 0, available: 0, maintenance: 0, todayRevenue: 0 },
     locationStats: data?.locationStats ?? [],
@@ -65,6 +72,7 @@ export function useDashboardData({ isRestricted, locationId }: UseDashboardDataA
     upcomingCheckOuts: data?.upcomingCheckOuts ?? [],
     recentPayments: data?.recentPayments ?? [],
     loading,
+    error,
     refetch,
   }
 }

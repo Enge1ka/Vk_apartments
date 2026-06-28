@@ -150,11 +150,19 @@ export default function BookingDetailPage() {
   }
 
   function handleDownloadReceipt(payment: ReceiptablePayment & { amount: number }) {
-    downloadReceipt(receiptPayload(payment, payment.amount, booking.outstanding_balance))
+    try {
+      downloadReceipt(receiptPayload(payment, payment.amount, booking.outstanding_balance))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
   }
 
   function handleShareReceipt(payment: ReceiptablePayment & { amount: number }) {
-    shareReceiptWhatsApp(receiptPayload(payment, payment.amount, booking.outstanding_balance), booking.client?.phone)
+    try {
+      shareReceiptWhatsApp(receiptPayload(payment, payment.amount, booking.outstanding_balance), booking.client?.phone)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
   }
 
   const sb = getBadge(BOOKING_STATUS_BADGE, booking.booking_status)
@@ -167,7 +175,10 @@ export default function BookingDetailPage() {
         </button>
         <div>
           <h1 className="text-lg font-bold text-gray-900">{booking.booking_reference}</h1>
-          <Badge variant={sb.variant}>{sb.label}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={sb.variant}>{sb.label}</Badge>
+            {booking.created_at && <span className="text-xs text-gray-400">Booked {formatDate(booking.created_at)}</span>}
+          </div>
         </div>
       </div>
 
@@ -196,6 +207,9 @@ export default function BookingDetailPage() {
           <Row label="Total Amount" value={formatCurrency(booking.total_amount)} bold />
           <Row label="Amount Paid" value={formatCurrency(booking.amount_paid)} />
           <Row label="Outstanding" value={formatCurrency(booking.outstanding_balance)} bold={booking.outstanding_balance > 0} />
+          {booking.booking_status === BOOKING_STATUS.CANCELLED && booking.outstanding_balance > 0 && (
+            <p className="text-xs text-gray-400">Booking is cancelled — this balance won't be collected through the app.</p>
+          )}
           <div className="pt-1">
             <Badge variant={getBadge(PAYMENT_STATUS_BADGE, booking.payment_status).variant}>
               {booking.payment_status?.toUpperCase()}

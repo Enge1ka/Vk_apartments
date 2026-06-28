@@ -7,6 +7,7 @@ import { Label } from '@/shared/ui/Label'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '@/shared/ui/Dialog'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import { downloadReceipt } from '@/shared/lib/receiptGenerator'
+import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { Search, Download, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/features/auth/useAuth'
@@ -18,7 +19,7 @@ import { validatePaymentAmount } from '../validators'
 
 export default function PaymentsPage() {
   const { isRestricted, locationId } = useAuth()
-  const { data: payments, loading, refetch } = useSupabaseQuery(async () => {
+  const { data: payments, loading, error, refetch } = useSupabaseQuery(async () => {
     if (isRestricted && !locationId) return []
     return listPayments({ locationId: isRestricted ? (locationId ?? undefined) : undefined })
   }, [isRestricted, locationId], 'payments.listPayments')
@@ -35,8 +36,12 @@ export default function PaymentsPage() {
 
   async function handleSearchBookings() {
     if (!bookingSearch.trim()) return
-    const results = await searchBookingsByReference(bookingSearch, isRestricted ? locationId : null)
-    setBookingResults(results)
+    try {
+      const results = await searchBookingsByReference(bookingSearch, isRestricted ? locationId : null)
+      setBookingResults(results)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function savePayment() {
@@ -66,20 +71,24 @@ export default function PaymentsPage() {
   }
 
   function handleDownloadReceipt(p: Payment) {
-    downloadReceipt({
-      receiptNumber: p.receipt_number,
-      paymentDate: p.payment_date,
-      clientName: p.booking?.client?.full_name,
-      clientPhone: p.booking?.client?.phone,
-      clientNRC: p.booking?.client?.nrc_or_passport,
-      apartmentNumber: p.booking?.apartment?.apartment_number,
-      location: p.booking?.apartment?.location?.name,
-      totalAmount: p.booking?.total_amount,
-      amountPaid: p.amount,
-      outstandingBalance: p.booking?.outstanding_balance,
-      paymentMethod: p.payment_method,
-      bookingRef: p.booking?.booking_reference,
-    })
+    try {
+      downloadReceipt({
+        receiptNumber: p.receipt_number,
+        paymentDate: p.payment_date,
+        clientName: p.booking?.client?.full_name,
+        clientPhone: p.booking?.client?.phone,
+        clientNRC: p.booking?.client?.nrc_or_passport,
+        apartmentNumber: p.booking?.apartment?.apartment_number,
+        location: p.booking?.apartment?.location?.name,
+        totalAmount: p.booking?.total_amount,
+        amountPaid: p.amount,
+        outstandingBalance: p.booking?.outstanding_balance,
+        paymentMethod: p.payment_method,
+        bookingRef: p.booking?.booking_reference,
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
   }
 
   const filtered = (payments ?? []).filter(p => {
@@ -112,7 +121,9 @@ export default function PaymentsPage() {
         </Select>
       </div>
 
-      {loading ? (
+      {error ? (
+        <ErrorBanner error={error} />
+      ) : loading ? (
         <div className="text-center text-sm text-gray-400 py-8">Loading…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12">

@@ -8,7 +8,7 @@ import { Plus, Search, Building2, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/features/auth/useAuth'
 import { APARTMENT_STATUS } from '@/shared/constants/status'
-import { createApartment, updateApartment, type Apartment } from '../api'
+import { createApartment, updateApartment, deleteApartment, type Apartment } from '../api'
 import { createLocation } from '@/features/locations/api'
 import { validateApartment } from '../validators'
 import { validateLocation } from '@/features/locations/validators'
@@ -122,6 +122,17 @@ export default function ApartmentsPage() {
     refetch()
   }
 
+  async function handleDelete(apt: Apartment) {
+    if (!window.confirm(`Delete apartment ${apt.apartment_number}? This can't be undone.`)) return
+    try {
+      await deleteApartment(apt.id)
+      toast.success('Apartment deleted')
+      refetch()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function saveLocation() {
     const { valid, data, errors } = validateLocation(locationForm)
     setLocationFormErrors(errors)
@@ -220,7 +231,7 @@ export default function ApartmentsPage() {
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">{name}</h2>
             <div className="grid grid-cols-1 gap-3">
               {apts.map(apt => (
-                <ApartmentCard key={apt.id} apt={apt} onEdit={openEdit} />
+                <ApartmentCard key={apt.id} apt={apt} onEdit={openEdit} onDelete={handleDelete} />
               ))}
             </div>
           </div>

@@ -38,13 +38,29 @@ export async function listClients(): Promise<Client[]> {
   return data ?? []
 }
 
+// Matches "0977123456", "+260977123456", and "260 97 712 3456" as the same
+// number — staff and clients type phone numbers inconsistently, and an
+// exact-string match would otherwise create a duplicate client per format.
+// Zambian mobile numbers are 9 digits after the leading 0/country code, so
+// the last 9 digits are a reliable, country-code-agnostic matching key.
+// Below 7 digits there's no validator-enforced minimum length on phone (see
+// bookings/validators.ts), so a short/garbage entry returns null here and
+// falls back to an exact match instead — risking a false-positive merge
+// with an unrelated client is worse than occasionally missing a real match.
+function phoneMatchKey(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  return digits.length >= 7 ? digits.slice(-9) : null
+}
+
 // Looks up a client by phone number, creating one if none exists.
 // Used by the booking flow, which never shows a separate "create client" step.
 export async function findOrCreateClient({ full_name, phone, nrc_or_passport, email, company }: ClientInput): Promise<string> {
-  const { data: existing, error: findError } = await supabase
-    .from('clients').select('id').eq('phone', phone).maybeSingle()
+  const matchKey = phoneMatchKey(phone)
+  const { data: existing, error: findError } = matchKey
+    ? await supabase.from('clients').select('id').ilike('phone', `%${matchKey}`).limit(1)
+    : await supabase.from('clients').select('id').eq('phone', phone).limit(1)
   if (findError) throw findError
-  if (existing) return existing.id
+  if (existing?.[0]) return existing[0].id
 
   const { data, error } = await supabase.from('clients').insert({
     full_name,

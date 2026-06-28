@@ -91,7 +91,7 @@ export function downloadReceipt(data: ReceiptData): void {
 }
 
 export function shareReceiptWhatsApp(data: ReceiptData, phone?: string | null): void {
-  const text = `*VK Luxurious Apartments*\nReceipt: ${data.receiptNumber}\nClient: ${data.clientName}\nApartment: ${data.apartmentNumber} (${data.location})\nCheck-in: ${formatDate(data.checkIn)} → Check-out: ${formatDate(data.checkOut)}\nTotal: ${formatCurrency(data.totalAmount)}\nPaid: ${formatCurrency(data.amountPaid)}\nBalance: ${formatCurrency(data.outstandingBalance)}\nThank you!`
+  const text = `*VK Luxurious Apartments*\nReceipt: ${data.receiptNumber ?? '—'}\nClient: ${data.clientName ?? '—'}\nApartment: ${data.apartmentNumber ?? '—'} (${data.location ?? '—'})\nCheck-in: ${formatDate(data.checkIn)} → Check-out: ${formatDate(data.checkOut)}\nTotal: ${formatCurrency(data.totalAmount)}\nPaid: ${formatCurrency(data.amountPaid)}\nBalance: ${formatCurrency(data.outstandingBalance)}\nThank you!`
   const encoded = encodeURIComponent(text)
   const cleaned = phone?.replace(/\D/g, '')
   window.open(`https://wa.me/${cleaned}?text=${encoded}`, '_blank')

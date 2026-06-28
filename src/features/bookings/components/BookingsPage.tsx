@@ -99,7 +99,7 @@ export default function BookingsPage() {
                       </div>
                     </div>
                     <div className="text-sm text-gray-600">
-                      <p>{b.apartment?.apartment_number} · {b.apartment?.location?.name}</p>
+                      <p>{b.apartment?.apartment_number} · {b.apartment?.type} · {b.apartment?.location?.name}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{formatDate(b.check_in_date)} → {formatDate(b.check_out_date)}</p>
                     </div>
                     <div className="flex justify-between mt-2 pt-2 border-t border-gray-50">

@@ -18,6 +18,18 @@ import type { BookingStatus, PaymentStatus } from '@/shared/constants/status'
 
 const EXCLUSION_VIOLATION = '23P01'
 
+// Subscribes to realtime booking changes; returns an unsubscribe function.
+// Calendar and Dashboard use this so one staff member's booking change
+// (new booking, check-in/out, cancellation) shows up for others without
+// them needing to manually refresh.
+export function subscribeToBookingChanges(onChange: () => void): () => void {
+  const channel = supabase
+    .channel('bookings-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, onChange)
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
+}
+
 export interface BookingListItem {
   id: string
   booking_reference: string

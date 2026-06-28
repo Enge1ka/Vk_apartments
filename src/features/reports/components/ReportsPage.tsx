@@ -10,6 +10,7 @@ import {
 } from 'recharts'
 import { Download, TrendingUp, AlertCircle, CreditCard, Building2 } from 'lucide-react'
 import { useAuth } from '@/features/auth/useAuth'
+import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { useReportsData } from '../useReportsData'
 import { getPresetDates } from '../selectors'
 
@@ -43,15 +44,53 @@ export default function ReportsPage() {
   const dateFrom = presetDates?.from ?? customRange.from
   const dateTo = presetDates?.to ?? customRange.to
 
-  const { revenue, outstanding, occupancy, bookingSummary, loading } = useReportsData({ isRestricted, locationId, dateFrom, dateTo })
+  const { revenue, outstanding, occupancy, bookingSummary, loading, error } = useReportsData({ isRestricted, locationId, dateFrom, dateTo })
+
+  // Each tab exports its own data — keep this in sync with what's on screen,
+  // rather than always exporting Revenue regardless of the active tab.
+  function csvForActiveTab(): { rows: (string | number)[][]; filename: string } {
+    switch (tab) {
+      case 'Occupancy':
+        return {
+          rows: [['Location', 'Occupied', 'Total', 'Rate (%)'], ...occupancy.byLocation.map(l => [l.name, l.occupied, l.total, l.rate])],
+          filename: `occupancy-${dateFrom}-${dateTo}.csv`,
+        }
+      case 'Bookings':
+        return {
+          rows: [
+            ['Status', 'Count'],
+            ['Currently In', bookingSummary.active],
+            ['Upcoming', bookingSummary.upcoming],
+            ['Due Checkout', bookingSummary.checkouts],
+            ['Cancelled', bookingSummary.cancelled],
+          ],
+          filename: `bookings-${dateFrom}-${dateTo}.csv`,
+        }
+      case 'Outstanding':
+        return {
+          rows: [
+            ['Reference', 'Client', 'Apartment', 'Location', 'Check In', 'Check Out', 'Outstanding (ZMW)', 'Total (ZMW)'],
+            ...outstanding.bookings.map(b => [
+              b.booking_reference, b.client?.full_name ?? '', b.apartment?.apartment_number ?? '',
+              b.apartment?.location?.name ?? '', b.check_in_date, b.check_out_date, b.outstanding_balance, b.total_amount,
+            ]),
+          ],
+          filename: `outstanding-${dateFrom}-${dateTo}.csv`,
+        }
+      default:
+        return {
+          rows: [['Date', 'Amount (ZMW)'], ...revenue.daily.map(d => [d.date, d.amount])],
+          filename: `revenue-${dateFrom}-${dateTo}.csv`,
+        }
+    }
+  }
 
   function exportCSV() {
-    const rows: (string | number)[][] = [['Date', 'Amount (ZMW)']]
-    revenue.daily.forEach(d => rows.push([d.date, d.amount]))
+    const { rows, filename } = csvForActiveTab()
     const csv = rows.map(r => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = `revenue-${dateFrom}-${dateTo}.csv`; a.click()
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
     URL.revokeObjectURL(url)
   }
 
@@ -98,6 +137,8 @@ export default function ReportsPage() {
           </button>
         ))}
       </div>
+
+      {error && <ErrorBanner error={error} />}
 
       {loading && <div className="text-center text-sm text-gray-400 py-4">Loading…</div>}
 

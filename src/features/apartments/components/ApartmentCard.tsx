@@ -7,9 +7,10 @@ import type { Apartment } from '../api'
 interface ApartmentCardProps {
   apt: Apartment
   onEdit: (apt: Apartment) => void
+  onDelete: (apt: Apartment) => void
 }
 
-export function ApartmentCard({ apt, onEdit }: ApartmentCardProps) {
+export function ApartmentCard({ apt, onEdit, onDelete }: ApartmentCardProps) {
   const badge = getBadge(APARTMENT_STATUS_BADGE, apt.status)
 
   return (
@@ -27,9 +28,14 @@ export function ApartmentCard({ apt, onEdit }: ApartmentCardProps) {
           {apt.monthly_rate && <span>{formatCurrency(apt.monthly_rate)}/month</span>}
         </div>
         {apt.notes && <p className="text-xs text-gray-400 mt-2">{apt.notes}</p>}
-        <button onClick={() => onEdit(apt)} className="mt-3 text-xs text-[#1e3a5f] font-medium hover:underline">
-          Edit
-        </button>
+        <div className="flex gap-3 mt-3">
+          <button onClick={() => onEdit(apt)} className="text-xs text-[#1e3a5f] font-medium hover:underline">
+            Edit
+          </button>
+          <button onClick={() => onDelete(apt)} className="text-xs text-red-500 font-medium hover:underline">
+            Delete
+          </button>
+        </div>
       </CardContent>
     </Card>
   )

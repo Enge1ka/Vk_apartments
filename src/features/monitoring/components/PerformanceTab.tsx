@@ -1,9 +1,10 @@
 import { Card, CardContent } from '@/shared/ui/Card'
 import { Badge } from '@/shared/ui/Badge'
+import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listMetrics, type MetricRating, type PerformanceMetric } from '../api'
 import type { BadgeVariant } from '@/shared/constants/status'
-import { Gauge, Zap } from 'lucide-react'
+import { Gauge, Zap, AlertTriangle } from 'lucide-react'
 
 const RATING_VARIANT: Record<MetricRating, BadgeVariant> = { good: 'success', 'needs-improvement': 'warning', poor: 'danger' }
 
@@ -16,15 +17,43 @@ function latestPerName(metrics: PerformanceMetric[]): PerformanceMetric[] {
 }
 
 export default function PerformanceTab() {
-  const { data: metrics, loading } = useSupabaseQuery(() => listMetrics({ limit: 100 }), [], 'monitoring.listMetrics')
+  const { data: metrics, loading, error } = useSupabaseQuery(() => listMetrics({ limit: 100 }), [], 'monitoring.listMetrics')
 
   const webVitals = latestPerName((metrics ?? []).filter(m => m.metric_type === 'web-vital'))
   const slowQueries = (metrics ?? []).filter(m => m.metric_type === 'query').slice(0, 10)
+  const recentErrors = (metrics ?? []).filter(m => m.metric_type === 'error').slice(0, 10)
 
+  if (error) return <ErrorBanner error={error} />
   if (loading) return <div className="text-center text-sm text-gray-400 py-8">Loading…</div>
 
   return (
     <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={16} className="text-gray-500" />
+            <h2 className="font-semibold text-gray-800 text-sm">Recent errors</h2>
+          </div>
+          {recentErrors.length === 0 ? (
+            <p className="text-sm text-gray-400">No errors recorded — good sign.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentErrors.map(e => (
+                <div key={e.id} className="text-sm border-b border-gray-50 last:border-0 py-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs text-red-600">{e.metric_name}</span>
+                    <span className="text-gray-400 text-xs">{e.path}</span>
+                  </div>
+                  {typeof e.metadata?.message === 'string' && (
+                    <p className="text-gray-500 text-xs mt-0.5">{e.metadata.message}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center gap-2 mb-3">

@@ -14,7 +14,7 @@ interface UseReportsDataArgs {
 export function useReportsData({ isRestricted, locationId, dateFrom, dateTo }: UseReportsDataArgs) {
   const locationFilter = isRestricted && locationId ? locationId : undefined
 
-  const { data, loading } = useSupabaseQuery(async () => {
+  const { data, loading, error } = useSupabaseQuery(async () => {
     const [payments, outstandingBookings, apartments, bookingSummary] = await Promise.all([
       listPayments({ locationId: locationFilter, dateFrom, dateTo }),
       listOutstandingBookings(locationFilter ?? null),
@@ -36,5 +36,6 @@ export function useReportsData({ isRestricted, locationId, dateFrom, dateTo }: U
     occupancy: data?.occupancy ?? { current: 0, total: 0, byLocation: [] },
     bookingSummary: data?.bookingSummary ?? { active: 0, upcoming: 0, checkouts: 0, cancelled: 0 },
     loading,
+    error,
   }
 }

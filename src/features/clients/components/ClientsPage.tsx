@@ -4,10 +4,11 @@ import { Input } from '@/shared/ui/Input'
 import { Label } from '@/shared/ui/Label'
 import { Search, Users } from 'lucide-react'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
+import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { listClients } from '../api'
 
 export default function ClientsPage() {
-  const { data: clients, loading } = useSupabaseQuery(listClients, [], 'clients.listClients')
+  const { data: clients, loading, error } = useSupabaseQuery(listClients, [], 'clients.listClients')
   const [search, setSearch] = useState('')
 
   const filtered = (clients ?? []).filter(c => {
@@ -25,7 +26,9 @@ export default function ClientsPage() {
         <Input id="client-search" placeholder="Search by name, phone, NRC…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {loading ? (
+      {error ? (
+        <ErrorBanner error={error} />
+      ) : loading ? (
         <div className="text-center text-sm text-gray-400 py-8">Loading…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12">

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import toast from 'react-hot-toast'
 import { useAuthStore } from './store'
 import {
   getProfile,
@@ -12,8 +13,15 @@ export function useAuth() {
   const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAuthStore()
 
   async function fetchProfile(userId: string) {
-    const data = await getProfile(userId)
-    if (data) setProfile(data)
+    try {
+      const data = await getProfile(userId)
+      if (data) setProfile(data)
+    } catch (err) {
+      // Leave profile null rather than guessing a role — the UI already
+      // treats a null profile as fully restricted, so this fails closed.
+      toast.error('Could not load your profile. Please refresh the page.')
+      console.error('[auth] failed to load profile:', err)
+    }
   }
 
   useEffect(() => {

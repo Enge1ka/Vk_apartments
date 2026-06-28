@@ -12,7 +12,9 @@ import { Badge } from '@/shared/ui/Badge'
 import { Select } from '@/shared/ui/Select'
 import { Plus, MapPin, ClipboardList } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import PerformanceTab from '@/features/monitoring/components/PerformanceTab'
+import { useAuth } from '@/features/auth/useAuth'
 
 const TABS = ['Users', 'Locations', 'Audit Log', 'Performance']
 
@@ -20,6 +22,7 @@ export default function SettingsPage() {
   // Route-level access control: this page is only ever rendered inside
   // <ProtectedRoute adminOnly>, which reactively redirects non-admins —
   // no need to duplicate that check here.
+  const { user } = useAuth()
   const [tab, setTab] = useState('Users')
   const [userDialog, setUserDialog] = useState(false)
   const [locDialog, setLocDialog] = useState(false)
@@ -27,7 +30,7 @@ export default function SettingsPage() {
   const [locFormErrors, setLocFormErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
-  const { data, refetch } = useSupabaseQuery(async () => {
+  const { data, error, refetch } = useSupabaseQuery(async () => {
     const [users, locations] = await Promise.all([listProfiles(), listLocations()])
     return { users, locations }
   }, [], 'settings.listUsersAndLocations')
@@ -57,11 +60,15 @@ export default function SettingsPage() {
     }
   }
 
-  async function toggleUserRole(user: Profile) {
-    const newRole = user.role === 'admin' ? 'employee' : 'admin'
+  async function toggleUserRole(target: Profile) {
+    const newRole = target.role === 'admin' ? 'employee' : 'admin'
+    if (target.id === user?.id && newRole !== 'admin' && !users.some(u => u.id !== target.id && u.role === 'admin')) {
+      toast.error("You're the only admin — promote someone else first so you don't lock yourself out of Settings.")
+      return
+    }
     try {
-      await setProfileRole(user.id, newRole)
-      toast.success(`${user.full_name || user.email || 'User'} is now ${newRole}`)
+      await setProfileRole(target.id, newRole)
+      toast.success(`${target.full_name || target.email || 'User'} is now ${newRole}`)
       refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
@@ -93,6 +100,8 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
+
+      {error && <ErrorBanner error={error} />}
 
       {tab === 'Users' && (
         <div className="space-y-3">

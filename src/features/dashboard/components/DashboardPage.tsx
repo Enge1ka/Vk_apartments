@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/features/auth/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
+import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
@@ -44,7 +45,7 @@ function StatCard({ label, value, sub, icon: Icon, color = 'blue' }: StatCardPro
 
 export default function DashboardPage() {
   const { user, profile, signOut, isRestricted, locationId } = useAuth()
-  const { stats, locationStats, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading } = useDashboardData({ isRestricted, locationId })
+  const { stats, locationStats, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading, error } = useDashboardData({ isRestricted, locationId })
 
   const occupancyPct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
 
@@ -65,6 +66,8 @@ export default function DashboardPage() {
           <Plus size={18} /> New Booking
         </Button>
       </Link>
+
+      {error && <ErrorBanner error={error} />}
 
       <div className="grid grid-cols-2 gap-3">
         <StatCard label="Total Apts" value={stats.total} icon={Building2} color="blue" />

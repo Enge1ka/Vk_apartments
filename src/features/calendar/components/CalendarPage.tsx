@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -6,12 +6,21 @@ import interactionPlugin from '@fullcalendar/interaction'
 import type { EventClickArg } from '@fullcalendar/core'
 import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
+import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { useAuth } from '@/features/auth/useAuth'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listLocations } from '@/features/locations/api'
-import { listBookingsForCalendar } from '@/features/bookings/api'
+import { listBookingsForCalendar, subscribeToBookingChanges } from '@/features/bookings/api'
 
 const LOCATION_COLORS = ['#1e3a5f', '#2d8a4e', '#b45309', '#7c3aed']
+
+// LOCATION_COLORS only covers the common case; beyond that, generate
+// visually distinct colors instead of cycling back and reusing one.
+function getLocationColor(i: number): string {
+  if (i < LOCATION_COLORS.length) return LOCATION_COLORS[i]
+  const hue = (i * 137.508) % 360 // golden angle keeps hues spread apart
+  return `hsl(${hue}, 55%, 35%)`
+}
 
 export default function CalendarPage() {
   const navigate = useNavigate()
@@ -21,7 +30,7 @@ export default function CalendarPage() {
   // Restricted users are locked to their assigned location.
   const effectiveLocation = isRestricted && locationId ? locationId : filterLocation
 
-  const { data } = useSupabaseQuery(async () => {
+  const { data, error, refetch } = useSupabaseQuery(async () => {
     const [locations, bookings] = await Promise.all([
       listLocations(),
       listBookingsForCalendar(effectiveLocation || null),
@@ -29,11 +38,17 @@ export default function CalendarPage() {
     return { locations, bookings }
   }, [effectiveLocation], 'calendar.listLocationsAndBookings')
 
+  // Stable ref so the realtime subscription (set up once) never calls a
+  // stale closure bound to an old effectiveLocation (mirrors useApartmentsPage).
+  const refetchRef = useRef(refetch)
+  useEffect(() => { refetchRef.current = refetch })
+  useEffect(() => subscribeToBookingChanges(() => refetchRef.current()), [])
+
   const locations = data?.locations ?? []
   const bookings = data?.bookings ?? []
 
   const colorMap: Record<string, string> = {}
-  locations.forEach((loc, i) => { colorMap[loc.id] = LOCATION_COLORS[i % LOCATION_COLORS.length] })
+  locations.forEach((loc, i) => { colorMap[loc.id] = getLocationColor(i) })
 
   const events = bookings.map(b => ({
     id: b.id,
@@ -60,10 +75,12 @@ export default function CalendarPage() {
         </Select>
       </div>
 
+      {error && <ErrorBanner error={error} />}
+
       <div className="flex flex-wrap gap-2">
         {locations.map((loc, i) => (
           <div key={loc.id} className="flex items-center gap-1.5 text-xs text-gray-600">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: LOCATION_COLORS[i % LOCATION_COLORS.length] }} />
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getLocationColor(i) }} />
             {loc.name}
           </div>
         ))}
