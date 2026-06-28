@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../useAuth'
 import { Button } from '@/shared/ui/Button'
@@ -8,23 +8,30 @@ import { Building2, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function Login() {
-  const { signIn } = useAuth()
+  const { signIn, user } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  // Navigate off the reactive auth store, not the local signIn() promise —
+  // signIn() resolves as soon as Supabase confirms the credentials, but the
+  // global `user` (read by ProtectedRoute) updates separately via the
+  // onAuthStateChange listener in useAuth. Navigating immediately on the
+  // promise could win that race and bounce straight back to /login before
+  // the store catches up, with nothing afterward to push the now-
+  // authenticated user forward — they'd look stuck on the login screen.
+  useEffect(() => {
+    if (user) navigate('/', { replace: true })
+  }, [user, navigate])
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
     const { error } = await signIn(email, password)
     setLoading(false)
-    if (error) {
-      toast.error(error.message || 'Invalid email or password')
-      return
-    }
-    navigate('/')
+    if (error) toast.error(error.message || 'Invalid email or password')
   }
 
   return (
