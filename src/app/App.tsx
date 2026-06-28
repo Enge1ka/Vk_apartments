@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, Suspense, lazy, type ReactNode } from 'react'
 import { Toaster } from 'react-hot-toast'
-import { useAuth } from '@/features/auth/useAuth'
+import { useAuthInit } from '@/features/auth/useAuth'
 import { isSupabaseConfigured } from '@/shared/lib/supabase'
 import { initMonitoring } from '@/features/monitoring/init'
 import AppLayout from '@/components/AppLayout'
@@ -56,7 +56,7 @@ function ConfigurationRequired() {
 }
 
 function AuthInit({ children }: { children: ReactNode }) {
-  useAuth()
+  useAuthInit()
   return children
 }
 

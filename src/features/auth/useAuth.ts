@@ -9,8 +9,20 @@ import {
   signOut as signOutApi,
 } from './api'
 
-export function useAuth() {
-  const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAuthStore()
+// Bootstraps the session + profile and subscribes to auth changes. Must be
+// mounted exactly once, at the app root (see AuthInit in src/app/App.tsx) —
+// every other component should use useAuth() below instead, which only
+// reads the resulting shared state. Previously every page called useAuth()
+// directly, which embedded this same effect, so every navigation tore down
+// one getSession()/8-second-timeout/onAuthStateChange subscription and
+// spun up a new, independently-timed one on top of whatever the app root's
+// own copy was doing. Concurrent listeners with no coordination between
+// them is exactly the kind of thing that produces "sometimes wrong" auth
+// state tied to navigation timing — most visibly, a logout immediately
+// followed by a login could leave an admin's profile cleared by a stale
+// listener from the page they were on before.
+export function useAuthInit() {
+  const { setUser, setProfile, setAuthReady, clearUser } = useAuthStore()
 
   async function fetchProfile(userId: string) {
     // A null profile fails the user closed to "restricted, no location" (see
@@ -55,6 +67,10 @@ export function useAuth() {
 
     return () => subscription.unsubscribe()
   }, [])
+}
+
+export function useAuth() {
+  const { user, profile, authReady, clearUser } = useAuthStore()
 
   async function signIn(email: string, password: string) {
     const { data, error } = await signInWithPassword(email, password)

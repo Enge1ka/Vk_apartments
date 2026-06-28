@@ -2,7 +2,7 @@ import type { Session, User } from '@supabase/supabase-js'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import toast from 'react-hot-toast'
-import { useAuth } from './useAuth'
+import { useAuth, useAuthInit } from './useAuth'
 import { useAuthStore } from './store'
 import * as api from './api'
 import type { Profile } from './api'
@@ -20,12 +20,22 @@ function mockAuthStateChange() {
   return unsubscribe
 }
 
+// useAuthInit() owns the session/listener effect (mounted once at the app
+// root in real usage); useAuth() just reads the resulting state. Tests
+// combine both so the effect actually runs.
+function renderAuth() {
+  return renderHook(() => {
+    useAuthInit()
+    return useAuth()
+  })
+}
+
 describe('useAuth', () => {
   it('marks auth ready once the session resolves, with no session', async () => {
     vi.spyOn(api, 'getSession').mockResolvedValue(null)
     mockAuthStateChange()
 
-    const { result } = renderHook(() => useAuth())
+    const { result } = renderAuth()
     await waitFor(() => expect(result.current.authReady).toBe(true))
 
     expect(result.current.user).toBeNull()
@@ -38,7 +48,7 @@ describe('useAuth', () => {
     vi.spyOn(api, 'getProfile').mockResolvedValue({ role: 'admin', location_id: 'loc-1' } as Profile)
     mockAuthStateChange()
 
-    const { result } = renderHook(() => useAuth())
+    const { result } = renderAuth()
     await waitFor(() => expect(result.current.authReady).toBe(true))
 
     expect(result.current.user).toEqual(user)
@@ -57,7 +67,7 @@ describe('useAuth', () => {
     mockAuthStateChange()
     const toastErrorSpy = vi.spyOn(toast, 'error')
 
-    const { result } = renderHook(() => useAuth())
+    const { result } = renderAuth()
     await act(async () => { await vi.advanceTimersByTimeAsync(500) })
     await act(async () => { await vi.advanceTimersByTimeAsync(0) })
 
@@ -75,7 +85,7 @@ describe('useAuth', () => {
     mockAuthStateChange()
     const toastErrorSpy = vi.spyOn(toast, 'error')
 
-    const { result } = renderHook(() => useAuth())
+    const { result } = renderAuth()
     await act(async () => { await vi.advanceTimersByTimeAsync(500) })
     await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
 
@@ -90,7 +100,7 @@ describe('useAuth', () => {
     vi.spyOn(api, 'getSession').mockReturnValue(new Promise(() => {})) // never resolves
     mockAuthStateChange()
 
-    const { result } = renderHook(() => useAuth())
+    const { result } = renderAuth()
     expect(result.current.authReady).toBe(false)
 
     await act(async () => {
@@ -107,7 +117,7 @@ describe('useAuth', () => {
     mockAuthStateChange()
     vi.spyOn(api, 'signOut').mockReturnValue(new Promise(() => {})) // never resolves
 
-    const { result } = renderHook(() => useAuth())
+    const { result } = renderAuth()
     await act(async () => {
       await vi.advanceTimersByTimeAsync(8000)
     })
