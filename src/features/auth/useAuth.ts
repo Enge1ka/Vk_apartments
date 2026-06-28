@@ -13,14 +13,25 @@ export function useAuth() {
   const { user, profile, authReady, setUser, setProfile, setAuthReady, clearUser } = useAuthStore()
 
   async function fetchProfile(userId: string) {
-    try {
-      const data = await getProfile(userId)
-      if (data) setProfile(data)
-    } catch (err) {
-      // Leave profile null rather than guessing a role — the UI already
-      // treats a null profile as fully restricted, so this fails closed.
-      toast.error('Could not load your profile. Please refresh the page.')
-      console.error('[auth] failed to load profile:', err)
+    // A null profile fails the user closed to "restricted, no location" (see
+    // isAdmin/isRestricted below), so a single transient blip right after
+    // login — a cold-starting Supabase project, a dropped request — would
+    // otherwise strand an admin as a powerless employee for the whole
+    // session. Retry a couple of times before actually giving up.
+    const delaysMs = [500, 1500]
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const data = await getProfile(userId)
+        if (data) setProfile(data)
+        return
+      } catch (err) {
+        if (attempt >= delaysMs.length) {
+          toast.error('Could not load your profile. Please refresh the page.')
+          console.error('[auth] failed to load profile after retries:', err)
+          return
+        }
+        await new Promise(resolve => setTimeout(resolve, delaysMs[attempt]))
+      }
     }
   }
 

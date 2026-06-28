@@ -1,6 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import toast from 'react-hot-toast'
 import { useAuth } from './useAuth'
 import { useAuthStore } from './store'
 import * as api from './api'
@@ -44,6 +45,44 @@ describe('useAuth', () => {
     expect(result.current.isAdmin).toBe(true)
     expect(result.current.isRestricted).toBe(false)
     expect(result.current.locationId).toBe('loc-1')
+  })
+
+  it('retries a failed profile fetch instead of stranding an admin as restricted', async () => {
+    vi.useFakeTimers()
+    const user = { id: 'user-1' } as User
+    vi.spyOn(api, 'getSession').mockResolvedValue({ user } as Session)
+    vi.spyOn(api, 'getProfile')
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValueOnce({ role: 'admin', location_id: 'loc-1' } as Profile)
+    mockAuthStateChange()
+    const toastErrorSpy = vi.spyOn(toast, 'error')
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+
+    expect(result.current.isAdmin).toBe(true)
+    expect(result.current.isRestricted).toBe(false)
+    expect(toastErrorSpy).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('gives up and warns after exhausting profile fetch retries', async () => {
+    vi.useFakeTimers()
+    const user = { id: 'user-1' } as User
+    vi.spyOn(api, 'getSession').mockResolvedValue({ user } as Session)
+    vi.spyOn(api, 'getProfile').mockRejectedValue(new Error('still down'))
+    mockAuthStateChange()
+    const toastErrorSpy = vi.spyOn(toast, 'error')
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+
+    expect(result.current.profile).toBeNull()
+    expect(result.current.isRestricted).toBe(true)
+    expect(toastErrorSpy).toHaveBeenCalledWith('Could not load your profile. Please refresh the page.')
+    vi.useRealTimers()
   })
 
   it('still marks auth ready if getSession hangs past the timeout fallback', async () => {
