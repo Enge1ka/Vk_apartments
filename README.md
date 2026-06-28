@@ -34,6 +34,7 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    - `supabase-error-logging.sql` — widens `performance_metrics.metric_type` to accept `error`, used by the `ErrorBoundary` to report uncaught render errors.
    - `supabase-data-integrity.sql` — adds CHECK constraints on `bookings` (checkout after check-in, `total_amount` matches `rate_per_day × number_of_days`) as a database-level backstop behind the app's own validation.
    - `supabase-realtime.sql` — adds `apartments` and `bookings` to the `supabase_realtime` publication. Required for the Calendar/Dashboard/Apartments pages to live-update when another staff member makes a change — without it, `postgres_changes` subscriptions silently never fire.
+   - `supabase-search-path-hardening.sql` — pins `search_path = public` on the `SECURITY DEFINER` functions (`next_booking_ref`, `record_payment`, `update_booking_status`, `log_client_metric`) that didn't already have it, closing a search-path-hijack gap.
 
    See [docs/database.md](docs/database.md) for the full schema reference.
 

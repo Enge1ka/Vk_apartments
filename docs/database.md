@@ -11,6 +11,7 @@ Supabase Postgres. Apply in this order:
 7. `supabase-error-logging.sql` — widens `performance_metrics.metric_type` to also accept `error`, so the React `ErrorBoundary` can report uncaught render errors through `log_client_metric()`.
 8. `supabase-data-integrity.sql` — CHECK constraints on `bookings`: `check_out_date > check_in_date`, and `total_amount = rate_per_day * number_of_days`. Backstops the app's own client-side validation against a direct SQL/API write.
 9. `supabase-realtime.sql` — adds `apartments` and `bookings` to the `supabase_realtime` publication, required for `subscribeToApartmentChanges()`/`subscribeToBookingChanges()` to actually receive `postgres_changes` events.
+10. `supabase-search-path-hardening.sql` — pins `search_path = public` on `next_booking_ref()`, `record_payment()`, `update_booking_status()`, and `log_client_metric()`. All four are `SECURITY DEFINER`; without a pinned `search_path` they resolve unqualified names using the *caller's* search_path, which a caller could manipulate to shadow the tables/sequences these functions actually touch.
 
 For typed access to this schema from the app, see
 [src/shared/types/README.md](../src/shared/types/README.md) — types are
