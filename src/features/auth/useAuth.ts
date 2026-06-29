@@ -58,11 +58,24 @@ export function useAuthInit() {
       setAuthReady(true)
     }).catch(() => { clearTimeout(timeout); setAuthReady(true) })
 
-    const { data: { subscription } } = onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) await fetchProfile(session.user.id)
-      else clearUser()
-      setAuthReady(true)
+    // Supabase's auth client holds an internal lock for the entire duration
+    // of this callback. Any other Supabase call made from inside it —
+    // including getProfile()'s database query, which needs that same lock
+    // internally to attach the current auth token — deadlocks waiting on a
+    // lock that can't release until this callback returns. The callback
+    // never returns because it's waiting on that exact call. Deferring with
+    // setTimeout runs the actual work after this callback has returned and
+    // the lock is free; this is Supabase's own documented workaround.
+    const { data: { subscription } } = onAuthStateChange((_event, session) => {
+      setTimeout(() => {
+        setUser(session?.user ?? null)
+        if (session?.user) {
+          fetchProfile(session.user.id).then(() => setAuthReady(true))
+        } else {
+          clearUser()
+          setAuthReady(true)
+        }
+      }, 0)
     })
 
     return () => subscription.unsubscribe()
