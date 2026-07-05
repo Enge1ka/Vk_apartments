@@ -8,7 +8,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '
 import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
 import { Input } from '@/shared/ui/Input'
-import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
+import { formatCurrency, formatDate, todayLocalISO } from '@/shared/lib/bookingUtils'
 import { downloadReceipt, shareReceiptWhatsApp, type ReceiptData } from '@/shared/lib/receiptGenerator'
 import { AlertTriangle, ChevronLeft, Download, Share2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -87,11 +87,11 @@ export default function BookingDetailPage() {
         bookingId: id!,
         amount: value!,
         paymentMethod: payForm.payment_method,
-        paymentDate: new Date().toISOString().split('T')[0],
+        paymentDate: todayLocalISO(),
       })
       toast.success(`Payment recorded — ${data.receipt_number}`)
       downloadReceipt(receiptPayload(
-        { receipt_number: data.receipt_number, payment_date: new Date().toISOString().split('T')[0], payment_method: payForm.payment_method },
+        { receipt_number: data.receipt_number, payment_date: todayLocalISO(), payment_method: payForm.payment_method },
         value!,
         (booking.outstanding_balance || 0) - value!,
       ))

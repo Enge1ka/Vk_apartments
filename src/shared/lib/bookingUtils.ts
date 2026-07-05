@@ -12,6 +12,20 @@ export function calcTotal(days: number, ratePerDay: number): number {
   return days * ratePerDay
 }
 
+// Formats a Date as yyyy-MM-dd from its *local* date parts. Every calendar
+// date sent to or compared against the database must go through this (or
+// todayLocalISO) — `toISOString().split('T')[0]` converts to UTC first, which
+// in a UTC+ timezone (Zambia is UTC+2) yields yesterday's date between
+// midnight and the offset, and is a full day off for local-midnight Dates
+// like month starts.
+export function toLocalISODate(date: Date): string {
+  return format(date, 'yyyy-MM-dd')
+}
+
+export function todayLocalISO(): string {
+  return toLocalISODate(new Date())
+}
+
 export function formatCurrency(amount?: number | null): string {
   const value = amount ?? 0
   // `amount || 0` used to also catch NaN (NaN is falsy) and silently print

@@ -1,6 +1,7 @@
 import { supabase } from '@/shared/lib/supabase'
 import { listApartmentIds } from '@/features/apartments/api'
 import { listBookingIdsForApartments } from '@/features/bookings/api'
+import { todayLocalISO } from '@/shared/lib/bookingUtils'
 
 // The only module allowed to query the `payments` table directly, or call
 // the record_payment RPC.
@@ -89,7 +90,7 @@ export async function recordPayment({ bookingId, amount, paymentDate, paymentMet
   const { data, error } = await supabase.rpc('record_payment', {
     p_booking_id: bookingId,
     p_amount: amount,
-    p_payment_date: paymentDate || new Date().toISOString().split('T')[0],
+    p_payment_date: paymentDate || todayLocalISO(),
     p_payment_method: paymentMethod,
   })
   if (error) throw error
