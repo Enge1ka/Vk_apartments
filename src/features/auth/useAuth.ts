@@ -109,14 +109,13 @@ export function useAuth() {
 
   const isAdmin = profile?.role === 'admin'
   const locationId = profile?.location_id ?? null
-  // A non-admin is location-restricted. NOTE: the data hooks scope by
-  // `isRestricted && locationId`, so a restricted user with NO assigned
-  // location currently falls through to seeing every location's data on
-  // read — while the server-side RPCs (record_payment/update_booking_status)
-  // reject them because NULL IS DISTINCT FROM any booking location. Until an
-  // admin assigns them a location in Settings they can browse everything but
-  // no write action will succeed. Assign a location on user creation to keep
-  // read and write access consistent. See audit finding H3.
+  // A non-admin is location-restricted. A restricted user with NO assigned
+  // location is blocked from the whole app by ProtectedRoute (the
+  // "No location assigned" gate), so any restricted user who reaches a data
+  // hook is guaranteed to have a non-null locationId here. That keeps read
+  // access consistent with the server-side RPCs, which already reject a
+  // no-location caller (NULL IS DISTINCT FROM any booking location). See
+  // audit finding H3.
   const isRestricted = !isAdmin
 
   return { user, profile, authReady, signIn, signOut, isAdmin, locationId, isRestricted }
