@@ -15,7 +15,7 @@ describe('validateClientStep', () => {
 })
 
 describe('validateApartmentStep', () => {
-  const BASE = { location_id: 'loc-1', apartment_id: 'apt-1', check_in_date: '2026-01-01', check_out_date: '2026-01-04' }
+  const BASE = { location_id: 'loc-1', apartment_id: 'apt-1', check_in_date: '2026-01-01', check_out_date: '2026-01-04', rate_per_day: '500' }
 
   it('accepts a complete step with check-out after check-in', () => {
     expect(validateApartmentStep(BASE).valid).toBe(true)
@@ -30,6 +30,14 @@ describe('validateApartmentStep', () => {
     const result = validateApartmentStep({ ...BASE, check_out_date: '2026-01-01' })
     expect(result.valid).toBe(false)
     expect(result.errors.check_out_date).toMatch(/after check-in/)
+  })
+
+  it('rejects a zero, negative, or blank rate per day', () => {
+    expect(validateApartmentStep({ ...BASE, rate_per_day: '0' }).valid).toBe(false)
+    expect(validateApartmentStep({ ...BASE, rate_per_day: '-100' }).valid).toBe(false)
+    const blank = validateApartmentStep({ ...BASE, rate_per_day: '' })
+    expect(blank.valid).toBe(false)
+    expect(blank.errors.rate_per_day).toMatch(/greater than 0|Enter a rate/)
   })
 })
 

@@ -79,6 +79,11 @@ export function useAuthInit() {
     })
 
     return () => subscription.unsubscribe()
+    // Mount-once by design (see the block comment above): this must set up
+    // exactly one session bootstrap + auth listener for the app's lifetime.
+    // The referenced setters are stable zustand actions and fetchProfile is
+    // only ever called from inside here, so an empty dep array is correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 }
 
@@ -104,7 +109,14 @@ export function useAuth() {
 
   const isAdmin = profile?.role === 'admin'
   const locationId = profile?.location_id ?? null
-  // All non-admins are restricted; null locationId means no data access
+  // A non-admin is location-restricted. NOTE: the data hooks scope by
+  // `isRestricted && locationId`, so a restricted user with NO assigned
+  // location currently falls through to seeing every location's data on
+  // read — while the server-side RPCs (record_payment/update_booking_status)
+  // reject them because NULL IS DISTINCT FROM any booking location. Until an
+  // admin assigns them a location in Settings they can browse everything but
+  // no write action will succeed. Assign a location on user creation to keep
+  // read and write access consistent. See audit finding H3.
   const isRestricted = !isAdmin
 
   return { user, profile, authReady, signIn, signOut, isAdmin, locationId, isRestricted }
