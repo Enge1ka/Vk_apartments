@@ -5,6 +5,7 @@ import { findOrCreateClient } from '@/features/clients/api'
 import type { Client, ClientInput } from '@/features/clients/api'
 import { BOOKING_STATUS } from '@/shared/constants/status'
 import type { BookingStatus, PaymentStatus } from '@/shared/constants/status'
+import { todayLocalISO } from '@/shared/lib/bookingUtils'
 
 // The only module allowed to query the `bookings` table directly (other
 // than the next_booking_ref/update_booking_status RPCs, which are also
@@ -243,7 +244,7 @@ export async function getBookingStatusSummary(locationId: string | null): Promis
     if (aptIds.length === 0) return { active: 0, upcoming: 0, checkouts: 0, cancelled: 0 }
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayLocalISO()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function countQuery(status: string, refine?: (q: any) => any) {
@@ -402,7 +403,7 @@ export async function updateBookingStatus(bookingId: string, newStatus: BookingS
 export async function cancelBooking(bookingId: string, reason: string, staffEmail?: string | null, existingNotes?: string | null): Promise<void> {
   const notes = [
     existingNotes,
-    `Cancelled on ${new Date().toISOString().split('T')[0]} by ${staffEmail || 'staff'}: ${reason}`,
+    `Cancelled on ${todayLocalISO()} by ${staffEmail || 'staff'}: ${reason}`,
   ].filter(Boolean).join('\n')
 
   const { error } = await supabase.rpc('update_booking_status', {

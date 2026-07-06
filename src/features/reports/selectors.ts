@@ -1,4 +1,5 @@
 import { PAYMENT_METHOD_OPTIONS, APARTMENT_STATUS } from '@/shared/constants/status'
+import { toLocalISODate } from '@/shared/lib/bookingUtils'
 import type { Payment } from '@/features/payments/api'
 import type { OutstandingBooking } from '@/features/bookings/api'
 import type { Apartment } from '@/features/apartments/api'
@@ -91,7 +92,11 @@ export interface DateRange {
 }
 
 export function getPresetDates(preset: string, now: Date = new Date()): DateRange | null {
-  const fmt = (d: Date) => d.toISOString().split('T')[0]
+  // Local-date formatting, not toISOString(): the starts built below are
+  // local midnights, and UTC conversion would shift them back a day in any
+  // UTC+ timezone — "last month" would run e.g. May 31 → Jun 29, dropping
+  // the final day's revenue from the report.
+  const fmt = toLocalISODate
   if (preset === 'today') return { from: fmt(now), to: fmt(now) }
   if (preset === 'week') {
     const start = new Date(now); start.setDate(now.getDate() - now.getDay())

@@ -94,5 +94,8 @@ export function shareReceiptWhatsApp(data: ReceiptData, phone?: string | null): 
   const text = `*VK Luxurious Apartments*\nReceipt: ${data.receiptNumber ?? '—'}\nClient: ${data.clientName ?? '—'}\nApartment: ${data.apartmentNumber ?? '—'} (${data.location ?? '—'})\nCheck-in: ${formatDate(data.checkIn)} → Check-out: ${formatDate(data.checkOut)}\nTotal: ${formatCurrency(data.totalAmount)}\nPaid: ${formatCurrency(data.amountPaid)}\nBalance: ${formatCurrency(data.outstandingBalance)}\nThank you!`
   const encoded = encodeURIComponent(text)
   const cleaned = phone?.replace(/\D/g, '')
-  window.open(`https://wa.me/${cleaned}?text=${encoded}`, '_blank')
+  // Without a number, open WhatsApp's recipient picker rather than
+  // https://wa.me/undefined?... (a broken link that 404s).
+  const target = cleaned ? `https://wa.me/${cleaned}?text=${encoded}` : `https://wa.me/?text=${encoded}`
+  window.open(target, '_blank')
 }

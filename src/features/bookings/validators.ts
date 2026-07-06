@@ -11,6 +11,11 @@ const apartmentStepSchema = z
     apartment_id: z.string().min(1, 'Select an apartment'),
     check_in_date: z.string().min(1, 'Check-in date is required'),
     check_out_date: z.string().min(1, 'Check-out date is required'),
+    // Pre-filled from the apartment's daily_rate but editable, so guard
+    // against a blank/zero/negative override producing a zero-total booking.
+    // The DB's check_total_amount_matches_rate constraint would still accept
+    // rate 0 (0 = 0 × days), so this UI check is the only guard.
+    rate_per_day: z.coerce.number('Enter a rate per day').positive('Rate per day must be greater than 0'),
   })
   .refine((data) => data.check_out_date > data.check_in_date, {
     message: 'Check-out must be after check-in',

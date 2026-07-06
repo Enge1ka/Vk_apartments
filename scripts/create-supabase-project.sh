@@ -34,6 +34,8 @@ SQL_FILES=(
   supabase-error-logging.sql
   supabase-data-integrity.sql
   supabase-realtime.sql
+  supabase-search-path-hardening.sql
+  supabase-rls-tightening.sql
 )
 
 echo "==> Checking Supabase CLI login..."
@@ -110,15 +112,24 @@ cat <<EOF
 ==============================================================
 Done. Next steps:
 
-1. Copy the "anon" key from above (and the project URL,
+1. >>> DISABLE PUBLIC SIGNUPS <<<  (do this first — security critical)
+   Dashboard -> Authentication -> Sign In / Providers ->
+   turn OFF "Allow new users to sign up".
+   This is a staff-only app: every read policy is "any authenticated
+   user", so with signups left ON (the Supabase default) anyone with the
+   public anon key could self-register and read every client, booking,
+   and payment. Create staff accounts yourself under Authentication ->
+   Users, then set their name/role/location in the app's Settings page.
+
+2. Copy the "anon" key from above (and the project URL,
    https://${PROJECT_REF}.supabase.co) into:
      - your local .env file (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
      - your new Vercel project's Environment Variables
 
-2. Save the database password somewhere safe:
+3. Save the database password somewhere safe:
      ${DB_PASSWORD}
 
-3. Run 'npm run gen:types' to generate
+4. Run 'npm run gen:types' to generate
    src/shared/types/database.types.ts against this new project.
 ==============================================================
 EOF

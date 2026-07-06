@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
 import { Input } from '@/shared/ui/Input'
 import { Label } from '@/shared/ui/Label'
-import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
+import { formatCurrency, formatDate, toLocalISODate } from '@/shared/lib/bookingUtils'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -29,7 +29,7 @@ const PRESETS = [
 function defaultCustomRange() {
   const start = new Date(); start.setDate(1)
   const today = new Date()
-  return { from: start.toISOString().split('T')[0], to: today.toISOString().split('T')[0] }
+  return { from: toLocalISODate(start), to: toLocalISODate(today) }
 }
 
 export default function ReportsPage() {

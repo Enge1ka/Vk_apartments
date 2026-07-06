@@ -6,7 +6,7 @@ import { Input } from '@/shared/ui/Input'
 import { Label } from '@/shared/ui/Label'
 import { Select } from '@/shared/ui/Select'
 import { Card, CardContent } from '@/shared/ui/Card'
-import { formatCurrency, calcDays, calcTotal } from '@/shared/lib/bookingUtils'
+import { formatCurrency, calcDays, calcTotal, todayLocalISO } from '@/shared/lib/bookingUtils'
 import { downloadReceipt } from '@/shared/lib/receiptGenerator'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -112,9 +112,17 @@ export default function NewBookingPage() {
     if (!validateStep()) return
     setSaving(true)
 
-    const overlapping = await hasOverlappingBooking(form.apartment_id, form.check_in_date, form.check_out_date)
-    if (overlapping) {
-      toast.error('This apartment is already booked for those dates. Please choose different dates or another apartment.')
+    try {
+      const overlapping = await hasOverlappingBooking(form.apartment_id, form.check_in_date, form.check_out_date)
+      if (overlapping) {
+        toast.error('This apartment is already booked for those dates. Please choose different dates or another apartment.')
+        setSaving(false)
+        return
+      }
+    } catch {
+      // A failed pre-flight check must not strand the form on "Creating…"
+      // forever — the DB's exclusion constraint is still the real guard.
+      toast.error('Could not verify availability. Please try again.')
       setSaving(false)
       return
     }
@@ -150,13 +158,13 @@ export default function NewBookingPage() {
         const payment = await recordPayment({
           bookingId: booking.bookingId,
           amount: amountPaid,
-          paymentDate: new Date().toISOString().split('T')[0],
+          paymentDate: todayLocalISO(),
           paymentMethod: form.payment_method,
         })
         const apt = apartments.find(a => a.id === form.apartment_id)
         downloadReceipt({
           receiptNumber: payment.receipt_number,
-          paymentDate: new Date().toISOString().split('T')[0],
+          paymentDate: todayLocalISO(),
           clientName: form.full_name,
           clientPhone: form.phone,
           clientNRC: form.nrc_or_passport || null,

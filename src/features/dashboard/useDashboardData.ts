@@ -5,6 +5,7 @@ import { listLocations } from '@/features/locations/api'
 import { listUpcomingCheckIns, listUpcomingCheckOuts, subscribeToBookingChanges } from '@/features/bookings/api'
 import { listPayments } from '@/features/payments/api'
 import { APARTMENT_STATUS } from '@/shared/constants/status'
+import { toLocalISODate, todayLocalISO } from '@/shared/lib/bookingUtils'
 
 interface UseDashboardDataArgs {
   isRestricted: boolean
@@ -12,8 +13,8 @@ interface UseDashboardDataArgs {
 }
 
 function todayIsoRange(days = 0) {
-  const today = new Date().toISOString().split('T')[0]
-  const to = new Date(Date.now() + days * 86400000).toISOString().split('T')[0]
+  const today = todayLocalISO()
+  const to = toLocalISODate(new Date(Date.now() + days * 86400000))
   return { today, to }
 }
 
