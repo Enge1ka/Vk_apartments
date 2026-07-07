@@ -89,22 +89,32 @@ export default function NewBookingPage() {
     return { value: client[key], onChange: (e: ChangeEvent<HTMLInputElement>) => setClient(c => ({ ...c, [key]: e.target.value })) }
   }
 
-  function addRoom() {
+  // A complete, valid room from the current draft, or null if the draft isn't
+  // finished. Lets Next fold in a single room without an explicit "Add Room" tap.
+  function buildDraftRoom(): RoomEntry | null {
     const apt = apartments.find(a => a.id === draft.apartment_id)
-    if (!apt) { toast.error('Select an apartment'); return }
-    if (!draft.check_in_date || !draft.check_out_date) { toast.error('Enter check-in and check-out dates'); return }
-    if (draft.check_out_date <= draft.check_in_date) { toast.error('Check-out must be after check-in'); return }
+    if (!apt) return null
+    if (!draft.check_in_date || !draft.check_out_date) return null
+    if (draft.check_out_date <= draft.check_in_date) return null
     const rate = Number(draft.rate_per_day)
-    if (!rate || rate <= 0) { toast.error('Rate per day must be greater than 0'); return }
-
-    setRooms(rs => [...rs, {
+    if (!rate || rate <= 0) return null
+    return {
       apartment_id: apt.id,
       apartment_number: apt.apartment_number,
       check_in_date: draft.check_in_date,
       check_out_date: draft.check_out_date,
       rate_per_day: rate,
-    }])
-    setDraft(EMPTY_DRAFT)
+    }
+  }
+
+  function addRoom() {
+    if (!draft.apartment_id) { toast.error('Select an apartment'); return }
+    if (!draft.check_in_date || !draft.check_out_date) { toast.error('Enter check-in and check-out dates'); return }
+    if (draft.check_out_date <= draft.check_in_date) { toast.error('Check-out must be after check-in'); return }
+    if (!Number(draft.rate_per_day) || Number(draft.rate_per_day) <= 0) { toast.error('Rate per day must be greater than 0'); return }
+
+    const room = buildDraftRoom()
+    if (room) { setRooms(rs => [...rs, room]); setDraft(EMPTY_DRAFT) }
   }
 
   function removeRoom(apartmentId: string) {
@@ -119,7 +129,17 @@ export default function NewBookingPage() {
       return result.valid
     }
     if (step === 1) {
-      if (rooms.length === 0) { toast.error('Add at least one room'); return false }
+      // Fold in a completed room the user filled but didn't explicitly "Add",
+      // so a single-apartment booking doesn't need the extra tap.
+      const draftRoom = buildDraftRoom()
+      if (rooms.length === 0 && !draftRoom) {
+        toast.error(draft.apartment_id ? 'Finish the room’s dates and rate first' : 'Add at least one room')
+        return false
+      }
+      if (draftRoom) {
+        setRooms(rs => rs.some(r => r.apartment_id === draftRoom.apartment_id) ? rs : [...rs, draftRoom])
+        setDraft(EMPTY_DRAFT)
+      }
       return true
     }
     if (step === 2) {
