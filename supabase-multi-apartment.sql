@@ -70,6 +70,14 @@ ALTER TABLE bookings DROP COLUMN IF EXISTS number_of_days;
 ALTER TABLE bookings DROP COLUMN IF EXISTS rate_per_day;
 ALTER TABLE bookings DROP COLUMN IF EXISTS apartment_id;
 
+-- check_in_date/check_out_date are now the denormalised span, populated by
+-- create_booking_with_apartments() AFTER the rooms are inserted (and by
+-- refresh_booking_rollup thereafter). The header INSERT therefore can't supply
+-- them up front, so they must be nullable. The check_out_after_check_in CHECK
+-- still holds once they're set (a CHECK passes on NULLs).
+ALTER TABLE bookings ALTER COLUMN check_in_date  DROP NOT NULL;
+ALTER TABLE bookings ALTER COLUMN check_out_date DROP NOT NULL;
+
 -- ============================================================
 -- 4. RLS: authenticated read; writes only via the RPCs below
 -- ============================================================

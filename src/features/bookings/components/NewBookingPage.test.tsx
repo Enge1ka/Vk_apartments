@@ -90,6 +90,22 @@ describe('NewBookingPage', () => {
     })))
   })
 
+  it('advances a single room filled in but not explicitly "Add Room"-ed', async () => {
+    setup()
+    await toRoomsStep()
+    // Fill the room draft but do NOT click "Add Room".
+    await userEvent.selectOptions(screen.getByLabelText('Location *'), 'loc-1')
+    await waitFor(() => expect(apartmentsApi.listApartments).toHaveBeenCalled())
+    await userEvent.selectOptions(screen.getByLabelText('Apartment'), 'apt-1')
+    await userEvent.type(screen.getByLabelText('Check-in'), '2026-01-01')
+    await userEvent.type(screen.getByLabelText('Check-out'), '2026-01-04')
+
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+
+    // Next folded the completed room in and moved on instead of erroring.
+    await waitFor(() => expect(screen.getByText('Initial Payment')).toBeInTheDocument())
+  })
+
   it('surfaces a createBooking overlap error without crashing', async () => {
     setup()
     vi.spyOn(bookingsApi, 'createBooking').mockRejectedValue(new Error('One of the selected apartments is already booked for those dates.'))

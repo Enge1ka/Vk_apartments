@@ -9,6 +9,7 @@ import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
 import { Input } from '@/shared/ui/Input'
 import { formatCurrency, formatDate, todayLocalISO } from '@/shared/lib/bookingUtils'
+import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt, shareReceiptWhatsApp, type ReceiptData } from '@/shared/lib/receiptGenerator'
 import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -103,7 +104,7 @@ export default function BookingDetailPage() {
       setPayError(null)
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -121,7 +122,7 @@ export default function BookingDetailPage() {
       toast.success(newStatus === BOOKING_STATUS.CHECKED_IN ? 'Room checked in' : 'Room checked out')
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -145,7 +146,7 @@ export default function BookingDetailPage() {
       setCancelError(null)
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -155,7 +156,7 @@ export default function BookingDetailPage() {
     try {
       downloadReceipt(receiptPayload(payment, payment.amount, booking.outstanding_balance))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -163,7 +164,7 @@ export default function BookingDetailPage() {
     try {
       shareReceiptWhatsApp(receiptPayload(payment, payment.amount, booking.outstanding_balance), booking.client?.phone)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     }
   }
 
