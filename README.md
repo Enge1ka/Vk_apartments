@@ -36,6 +36,7 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    - `supabase-realtime.sql` — adds `apartments` and `bookings` to the `supabase_realtime` publication. Required for the Calendar/Dashboard/Apartments pages to live-update when another staff member makes a change — without it, `postgres_changes` subscriptions silently never fire.
    - `supabase-search-path-hardening.sql` — pins `search_path = public` on the `SECURITY DEFINER` functions (`next_booking_ref`, `record_payment`, `update_booking_status`, `log_client_metric`) that didn't already have it, closing a search-path-hijack gap.
    - `supabase-rls-tightening.sql` — drops the permissive `auth_update_bookings` / `auth_insert_payments` policies that let clients bypass the hardened RPCs, constrains booking inserts to fresh unpaid self-owned rows, pins `search_path` on `handle_new_user()`, and caps the anon-writable `log_client_metric()` payload.
+   - `supabase-auto-checkout.sql` — adds `auto_checkout_due_bookings()` and a `pg_cron` job that runs at 10:00 Africa/Lusaka daily, checking out any still-checked-in guest whose checkout date has arrived and releasing their apartment. Requires the `pg_cron` extension (enable under Dashboard → Database → Extensions if the `CREATE EXTENSION` line errors).
 
    See [docs/database.md](docs/database.md) for the full schema reference.
 

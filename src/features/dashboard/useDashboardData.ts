@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listApartments } from '@/features/apartments/api'
 import { listLocations } from '@/features/locations/api'
-import { listUpcomingCheckIns, listUpcomingCheckOuts, subscribeToBookingChanges } from '@/features/bookings/api'
+import { listInHouse, listUpcomingCheckIns, listUpcomingCheckOuts, subscribeToBookingChanges } from '@/features/bookings/api'
 import { listPayments } from '@/features/payments/api'
 import { APARTMENT_STATUS } from '@/shared/constants/status'
 import { toLocalISODate, todayLocalISO } from '@/shared/lib/bookingUtils'
@@ -24,12 +24,17 @@ function todayIsoRange(days = 0) {
 export function useDashboardData({ isRestricted, locationId }: UseDashboardDataArgs) {
   const { data, loading, error, refetch } = useSupabaseQuery(async () => {
     const { today, to: in3Days } = todayIsoRange(3)
+    // Upcoming check-ins start tomorrow: a booking whose stay covers today
+    // belongs under "Currently in-house", not "upcoming" (fixes bookings for
+    // a current stay reading as upcoming even after their check-in date).
+    const tomorrow = toLocalISODate(new Date(Date.now() + 86400000))
     const locationFilter = isRestricted && locationId ? locationId : undefined
 
-    const [apartments, locations, checkIns, checkOuts, todaysPayments, recentPayments] = await Promise.all([
+    const [apartments, locations, inHouse, checkIns, checkOuts, todaysPayments, recentPayments] = await Promise.all([
       listApartments(locationFilter ? { locationId: locationFilter } : {}),
       listLocations(),
-      listUpcomingCheckIns({ locationId: locationFilter, fromDate: today, toDate: in3Days }),
+      listInHouse(locationFilter ?? null),
+      listUpcomingCheckIns({ locationId: locationFilter, fromDate: tomorrow, toDate: in3Days }),
       listUpcomingCheckOuts({ locationId: locationFilter, fromDate: today, toDate: in3Days }),
       listPayments({ locationId: locationFilter, dateFrom: today, dateTo: today }),
       listPayments({ locationId: locationFilter, limit: 5 }),
@@ -54,6 +59,7 @@ export function useDashboardData({ isRestricted, locationId }: UseDashboardDataA
         todayRevenue: todaysPayments.reduce((sum, p) => sum + Number(p.amount), 0),
       },
       locationStats,
+      inHouse,
       upcomingCheckIns: checkIns,
       upcomingCheckOuts: checkOuts,
       recentPayments,
@@ -69,6 +75,7 @@ export function useDashboardData({ isRestricted, locationId }: UseDashboardDataA
   return {
     stats: data?.stats ?? { total: 0, occupied: 0, available: 0, maintenance: 0, todayRevenue: 0 },
     locationStats: data?.locationStats ?? [],
+    inHouse: data?.inHouse ?? [],
     upcomingCheckIns: data?.upcomingCheckIns ?? [],
     upcomingCheckOuts: data?.upcomingCheckOuts ?? [],
     recentPayments: data?.recentPayments ?? [],

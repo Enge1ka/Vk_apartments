@@ -2,11 +2,13 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/features/auth/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
+import { Badge } from '@/shared/ui/Badge'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
+import { BOOKING_STATUS } from '@/shared/constants/status'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
-  TrendingUp, Clock, LogOut, Plus, type LucideIcon,
+  TrendingUp, Clock, LogOut, Plus, Home, type LucideIcon,
 } from 'lucide-react'
 import { useDashboardData } from '../useDashboardData'
 
@@ -45,7 +47,7 @@ function StatCard({ label, value, sub, icon: Icon, color = 'blue' }: StatCardPro
 
 export default function DashboardPage() {
   const { user, profile, signOut, isRestricted, locationId } = useAuth()
-  const { stats, locationStats, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading, error } = useDashboardData({ isRestricted, locationId })
+  const { stats, locationStats, inHouse, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading, error } = useDashboardData({ isRestricted, locationId })
 
   const occupancyPct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
 
@@ -94,6 +96,34 @@ export default function DashboardPage() {
                 </div>
               )
             })}
+          </CardContent>
+        </Card>
+      )}
+
+      {inHouse.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Home size={16} className="text-green-600" /> Currently In-house
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 pt-0">
+            {inHouse.map(b => (
+              <Link key={b.id} to={`/bookings/${b.id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{b.client?.full_name}</p>
+                  <p className="text-xs text-gray-400">{b.apartment?.apartment_number} · {b.apartment?.location?.name}</p>
+                </div>
+                <div className="text-right">
+                  {b.booking_status === BOOKING_STATUS.CONFIRMED
+                    ? <Badge variant="warning">Not checked in</Badge>
+                    : <span className="text-xs text-gray-500">Out {formatDate(b.check_out_date)}</span>}
+                  {b.outstanding_balance > 0 && (
+                    <p className="text-xs text-red-500 font-medium mt-0.5">{formatCurrency(b.outstanding_balance)} owed</p>
+                  )}
+                </div>
+              </Link>
+            ))}
           </CardContent>
         </Card>
       )}

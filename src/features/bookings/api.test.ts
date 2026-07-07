@@ -4,7 +4,7 @@ import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
   cancelBooking, createBooking, getBookingStatusSummary, hasOverlappingBooking,
-  listBookingsForCalendar, listOutstandingBookings, updateBookingStatus,
+  listBookingsForCalendar, listInHouse, listOutstandingBookings, updateBookingStatus,
 } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
@@ -120,6 +120,35 @@ describe('listOutstandingBookings', () => {
   it('short-circuits when the location has no apartments', async () => {
     vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
     await expect(listOutstandingBookings('loc-1')).resolves.toEqual([])
+    expect(mockFrom).not.toHaveBeenCalled()
+  })
+})
+
+describe('listInHouse', () => {
+  it('bounds the stay around today and excludes cancelled/checked-out', async () => {
+    const chain: any = {
+      select: () => chain,
+      lte: vi.fn(() => chain),
+      gt: vi.fn(() => chain),
+      neq: vi.fn(() => chain),
+      order: vi.fn(() => Promise.resolve({ data: [{ id: 'b1' }], error: null })),
+    }
+    mockFrom.mockReturnValue(chain)
+
+    const result = await listInHouse(null)
+
+    // check-in on/before today, check-out strictly after today
+    expect(chain.lte).toHaveBeenCalledWith('check_in_date', expect.any(String))
+    expect(chain.gt).toHaveBeenCalledWith('check_out_date', expect.any(String))
+    // both terminal statuses filtered out
+    expect(chain.neq).toHaveBeenCalledWith('booking_status', 'cancelled')
+    expect(chain.neq).toHaveBeenCalledWith('booking_status', 'checked_out')
+    expect(result).toEqual([{ id: 'b1' }])
+  })
+
+  it('short-circuits when the location has no apartments', async () => {
+    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
+    await expect(listInHouse('loc-1')).resolves.toEqual([])
     expect(mockFrom).not.toHaveBeenCalled()
   })
 })
