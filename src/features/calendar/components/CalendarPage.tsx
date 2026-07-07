@@ -10,7 +10,7 @@ import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { useAuth } from '@/features/auth/useAuth'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listLocations } from '@/features/locations/api'
-import { listBookingsForCalendar, subscribeToBookingChanges } from '@/features/bookings/api'
+import { listRoomsForCalendar, subscribeToBookingChanges } from '@/features/bookings/api'
 
 const LOCATION_COLORS = ['#1e3a5f', '#2d8a4e', '#b45309', '#7c3aed']
 
@@ -31,12 +31,12 @@ export default function CalendarPage() {
   const effectiveLocation = isRestricted && locationId ? locationId : filterLocation
 
   const { data, error, refetch } = useSupabaseQuery(async () => {
-    const [locations, bookings] = await Promise.all([
+    const [locations, rooms] = await Promise.all([
       listLocations(),
-      listBookingsForCalendar(effectiveLocation || null),
+      listRoomsForCalendar(effectiveLocation || null),
     ])
-    return { locations, bookings }
-  }, [effectiveLocation], 'calendar.listLocationsAndBookings')
+    return { locations, rooms }
+  }, [effectiveLocation], 'calendar.listLocationsAndRooms')
 
   // Stable ref so the realtime subscription (set up once) never calls a
   // stale closure bound to an old effectiveLocation (mirrors useApartmentsPage).
@@ -45,19 +45,20 @@ export default function CalendarPage() {
   useEffect(() => subscribeToBookingChanges(() => refetchRef.current()), [])
 
   const locations = data?.locations ?? []
-  const bookings = data?.bookings ?? []
+  const rooms = data?.rooms ?? []
 
   const colorMap: Record<string, string> = {}
   locations.forEach((loc, i) => { colorMap[loc.id] = getLocationColor(i) })
 
-  const events = bookings.map(b => ({
-    id: b.id,
-    title: `${b.apartment?.apartment_number} · ${b.client?.full_name}`,
-    start: b.check_in_date,
-    end: b.check_out_date,
-    backgroundColor: (b.apartment?.location_id && colorMap[b.apartment.location_id]) || '#1e3a5f',
+  // One event per room — each apartment's own stay within a booking.
+  const events = rooms.map(r => ({
+    id: r.id,
+    title: `${r.apartment?.apartment_number} · ${r.client?.full_name}`,
+    start: r.check_in_date,
+    end: r.check_out_date,
+    backgroundColor: (r.apartment?.location_id && colorMap[r.apartment.location_id]) || '#1e3a5f',
     borderColor: 'transparent',
-    extendedProps: { bookingId: b.id },
+    extendedProps: { bookingId: r.booking_id },
   }))
 
   function handleEventClick({ event }: EventClickArg) {

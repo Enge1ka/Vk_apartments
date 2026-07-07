@@ -7,53 +7,69 @@ import { BOOKING_STATUS } from '@/shared/constants/status'
 import type { BookingStatus, PaymentStatus } from '@/shared/constants/status'
 import { todayLocalISO } from '@/shared/lib/bookingUtils'
 
-// The only module allowed to query the `bookings` table directly (other
-// than the next_booking_ref/update_booking_status RPCs, which are also
-// only called from here).
+// The only module allowed to query the `bookings` / `booking_apartments`
+// tables directly (plus the booking RPCs, also only called from here).
+//
+// A booking is a header (client, one combined total, one balance, one payment
+// ledger) with one or more rooms in `booking_apartments`. Each room has its
+// own apartment, dates, rate, and status. The header's check_in/check_out are
+// the span (earliest room in, latest room out) and booking_status is a rollup
+// of the rooms — both maintained server-side by the booking RPCs.
 //
 // Deliberately does not import features/payments/api.ts: payments/api.ts
-// imports listBookingIdsForApartments from here to scope payments by
-// location, so this module must not depend back on payments — the caller
-// (NewBookingPage) records the optional first payment itself after
-// createBooking() resolves, instead of this module orchestrating both.
+// imports listBookingIdsForApartments from here to scope payments by location,
+// so this module must not depend back on payments.
 
 const EXCLUSION_VIOLATION = '23P01'
 
-// Subscribes to realtime booking changes; returns an unsubscribe function.
-// Calendar and Dashboard use this so one staff member's booking change
-// (new booking, check-in/out, cancellation) shows up for others without
-// them needing to manually refresh.
 export function subscribeToBookingChanges(onChange: () => void): () => void {
   const channel = supabase
     .channel('bookings-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_apartments' }, onChange)
     .subscribe()
   return () => { supabase.removeChannel(channel) }
+}
+
+// Minimal per-room shape carried by the list/summary views so the UI can show
+// which apartment(s) a booking covers.
+export interface RoomSummary {
+  apartment: { apartment_number: string; type?: string; location: { name: string } | null } | null
+}
+
+// A full room line on a booking (detail view / receipts).
+export interface BookingRoom {
+  id: string
+  apartment_id: string
+  check_in_date: string
+  check_out_date: string
+  number_of_days: number
+  rate_per_day: number
+  line_total: number
+  status: BookingStatus
+  apartment: Apartment | null
 }
 
 export interface BookingListItem {
   id: string
   booking_reference: string
-  check_in_date: string
-  check_out_date: string
+  check_in_date: string | null
+  check_out_date: string | null
   total_amount: number
   amount_paid: number
   outstanding_balance: number
   booking_status: BookingStatus
   payment_status: PaymentStatus
   client: { full_name: string; phone: string } | null
-  apartment: { apartment_number: string; type: string; location: { name: string } | null } | null
+  rooms: RoomSummary[]
 }
 
 export interface Booking {
   id: string
   booking_reference: string
   client_id: string
-  apartment_id: string
-  check_in_date: string
-  check_out_date: string
-  number_of_days: number
-  rate_per_day: number
+  check_in_date: string | null
+  check_out_date: string | null
   total_amount: number
   amount_paid: number
   outstanding_balance: number
@@ -63,7 +79,7 @@ export interface Booking {
   created_by: string | null
   created_at?: string
   client: Client | null
-  apartment: Apartment | null
+  rooms: BookingRoom[]
 }
 
 export interface BookingSearchResult {
@@ -72,18 +88,21 @@ export interface BookingSearchResult {
   total_amount: number
   amount_paid: number
   outstanding_balance: number
-  check_in_date: string
-  check_out_date: string
+  check_in_date: string | null
+  check_out_date: string | null
   client: { id: string; full_name: string; phone: string; nrc_or_passport: string | null } | null
-  apartment: { apartment_number: string; location: { name: string } | null } | null
+  rooms: RoomSummary[]
 }
 
-export interface CalendarBooking {
+// One calendar event per room (the calendar colours by location and shows
+// each apartment's own stay).
+export interface CalendarRoom {
   id: string
+  booking_id: string
   booking_reference: string
   check_in_date: string
   check_out_date: string
-  booking_status: BookingStatus
+  status: BookingStatus
   client: { full_name: string } | null
   apartment: { apartment_number: string; location_id: string; location: { id: string; name: string } | null } | null
 }
@@ -94,34 +113,30 @@ export interface OutstandingBooking {
   outstanding_balance: number
   total_amount: number
   amount_paid: number
-  check_in_date: string
-  check_out_date: string
+  check_in_date: string | null
+  check_out_date: string | null
   payment_status: PaymentStatus
   client: { full_name: string; phone: string } | null
-  apartment: { apartment_number: string; location: { name: string } | null } | null
+  rooms: RoomSummary[]
 }
 
 export interface UpcomingBooking {
   id: string
-  check_in_date: string
-  check_out_date: string
+  check_in_date: string | null
+  check_out_date: string | null
   outstanding_balance: number
   client: { full_name: string } | null
-  apartment: { apartment_number: string; location: { name: string } | null } | null
+  rooms: RoomSummary[]
 }
 
-// A booking whose stay covers today (check-in on/before today, check-out
-// after today) and that hasn't been checked out or cancelled — i.e. the
-// guest is (or should be) in the apartment right now. Includes booking_status
-// so the UI can flag a `confirmed` one that nobody has checked in yet.
 export interface InHouseBooking {
   id: string
-  check_in_date: string
-  check_out_date: string
+  check_in_date: string | null
+  check_out_date: string | null
   booking_status: BookingStatus
   outstanding_balance: number
   client: { full_name: string } | null
-  apartment: { apartment_number: string; location: { name: string } | null } | null
+  rooms: RoomSummary[]
 }
 
 export interface BookingFilters {
@@ -144,15 +159,18 @@ export interface BookingStatusSummary {
   cancelled: number
 }
 
-export interface CreateBookingInput {
-  client: ClientInput
+// One apartment on a new booking, with its own dates and rate.
+export interface RoomInput {
   apartmentId: string
   checkInDate: string
   checkOutDate: string
   ratePerDay: number
-  totalAmount: number
+}
+
+export interface CreateBookingInput {
+  client: ClientInput
+  rooms: RoomInput[]
   notes?: string | null
-  createdBy?: string | null
 }
 
 export interface CreateBookingResult {
@@ -160,55 +178,62 @@ export interface CreateBookingResult {
   bookingRef: string
 }
 
+const ROOM_SUMMARY = `rooms:booking_apartments(apartment:apartments(apartment_number, type, location:locations(name)))`
+
 const LIST_SELECT = `
   id, booking_reference, check_in_date, check_out_date,
   total_amount, amount_paid, outstanding_balance,
   booking_status, payment_status,
   client:clients(full_name, phone),
-  apartment:apartments(apartment_number, type, location:locations(name))
+  ${ROOM_SUMMARY}
 `
 
-const DETAIL_SELECT = `*, client:clients(*), apartment:apartments(*, location:locations(*))`
+const DETAIL_SELECT = `*, client:clients(*), rooms:booking_apartments(*, apartment:apartments(*, location:locations(*)))`
 
 const SEARCH_SELECT = `
   id, booking_reference, total_amount, amount_paid, outstanding_balance, check_in_date, check_out_date,
   client:clients(id, full_name, phone, nrc_or_passport),
-  apartment:apartments(apartment_number, location:locations(name))
-`
-
-const CALENDAR_SELECT = `
-  id, booking_reference, check_in_date, check_out_date, booking_status,
-  client:clients(full_name),
-  apartment:apartments(apartment_number, location_id, location:locations(id, name))
+  ${ROOM_SUMMARY}
 `
 
 const OUTSTANDING_SELECT = `
   id, booking_reference, outstanding_balance, total_amount, amount_paid,
   check_in_date, check_out_date, payment_status,
   client:clients(full_name, phone),
-  apartment:apartments(apartment_number, location:locations(name))
+  ${ROOM_SUMMARY}
 `
 
 const UPCOMING_SELECT = `
   id, check_in_date, check_out_date, outstanding_balance,
   client:clients(full_name),
-  apartment:apartments(apartment_number, location:locations(name))
+  ${ROOM_SUMMARY}
 `
 
 const INHOUSE_SELECT = `
   id, check_in_date, check_out_date, booking_status, outstanding_balance,
   client:clients(full_name),
-  apartment:apartments(apartment_number, location:locations(name))
+  ${ROOM_SUMMARY}
 `
+
+// Booking IDs that have at least one room in the given location — the
+// replacement for the old `bookings.apartment_id IN (...)` scoping now that
+// the apartment link lives on booking_apartments.
+async function bookingIdsForLocation(locationId: string): Promise<string[]> {
+  const aptIds = await listApartmentIds(locationId)
+  if (aptIds.length === 0) return []
+  const { data, error } = await supabase.from('booking_apartments').select('booking_id').in('apartment_id', aptIds)
+  if (error) throw error
+  return [...new Set((data ?? []).map(r => r.booking_id as string))]
+}
 
 async function listUpcomingByDate(
   dateColumn: 'check_in_date' | 'check_out_date',
   { locationId, fromDate, toDate, limit = 5 }: DateRangeFilters
 ): Promise<UpcomingBooking[]> {
-  let aptIds: string[] | null = null
+  let bookingIds: string[] | null = null
   if (locationId) {
-    aptIds = await listApartmentIds(locationId)
-    if (aptIds.length === 0) return []
+    bookingIds = await bookingIdsForLocation(locationId)
+    if (bookingIds.length === 0) return []
   }
 
   let query = supabase
@@ -219,7 +244,7 @@ async function listUpcomingByDate(
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .order(dateColumn)
     .limit(limit)
-  if (aptIds) query = query.in('apartment_id', aptIds)
+  if (bookingIds) query = query.in('id', bookingIds)
 
   const { data, error } = await query
   if (error) throw error
@@ -230,17 +255,19 @@ export function listUpcomingCheckIns(filters: DateRangeFilters): Promise<Upcomin
   return listUpcomingByDate('check_in_date', filters)
 }
 
-// Guests whose stay covers today and who haven't been checked out/cancelled.
-// This is what makes a booking created for a current stay stop reading as
-// "upcoming": once check-in date arrives it moves here (whether or not staff
-// have tapped Check In yet), instead of only appearing under future check-ins.
+export function listUpcomingCheckOuts(filters: DateRangeFilters): Promise<UpcomingBooking[]> {
+  return listUpcomingByDate('check_out_date', filters)
+}
+
+// Bookings whose stay covers today and that aren't checked out/cancelled, so a
+// booking for a current stay reads as in-house rather than upcoming.
 export async function listInHouse(locationId: string | null): Promise<InHouseBooking[]> {
   const today = todayLocalISO()
 
-  let aptIds: string[] | null = null
+  let bookingIds: string[] | null = null
   if (locationId) {
-    aptIds = await listApartmentIds(locationId)
-    if (aptIds.length === 0) return []
+    bookingIds = await bookingIdsForLocation(locationId)
+    if (bookingIds.length === 0) return []
   }
 
   let query = supabase
@@ -251,22 +278,18 @@ export async function listInHouse(locationId: string | null): Promise<InHouseBoo
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .neq('booking_status', BOOKING_STATUS.CHECKED_OUT)
     .order('check_out_date')
-  if (aptIds) query = query.in('apartment_id', aptIds)
+  if (bookingIds) query = query.in('id', bookingIds)
 
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as unknown as InHouseBooking[]
 }
 
-export function listUpcomingCheckOuts(filters: DateRangeFilters): Promise<UpcomingBooking[]> {
-  return listUpcomingByDate('check_out_date', filters)
-}
-
 export async function listOutstandingBookings(locationId: string | null): Promise<OutstandingBooking[]> {
-  let aptIds: string[] | null = null
+  let bookingIds: string[] | null = null
   if (locationId) {
-    aptIds = await listApartmentIds(locationId)
-    if (aptIds.length === 0) return []
+    bookingIds = await bookingIdsForLocation(locationId)
+    if (bookingIds.length === 0) return []
   }
 
   let query = supabase
@@ -275,21 +298,20 @@ export async function listOutstandingBookings(locationId: string | null): Promis
     .gt('outstanding_balance', 0)
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .order('outstanding_balance', { ascending: false })
-  if (aptIds) query = query.in('apartment_id', aptIds)
+  if (bookingIds) query = query.in('id', bookingIds)
 
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as unknown as OutstandingBooking[]
 }
 
-// Counts only (no row data) — used for the Reports "Bookings" tab summary
-// cards. "active" and "checkouts" can overlap (a checked-in booking due
-// out today counts in both), matching the original metric's intent.
+// Counts for the Reports "Bookings" tab. "active" and "checkouts" can overlap
+// (a checked-in booking due out today counts in both).
 export async function getBookingStatusSummary(locationId: string | null): Promise<BookingStatusSummary> {
-  let aptIds: string[] | null = null
+  let bookingIds: string[] | null = null
   if (locationId) {
-    aptIds = await listApartmentIds(locationId)
-    if (aptIds.length === 0) return { active: 0, upcoming: 0, checkouts: 0, cancelled: 0 }
+    bookingIds = await bookingIdsForLocation(locationId)
+    if (bookingIds.length === 0) return { active: 0, upcoming: 0, checkouts: 0, cancelled: 0 }
   }
 
   const today = todayLocalISO()
@@ -297,7 +319,7 @@ export async function getBookingStatusSummary(locationId: string | null): Promis
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function countQuery(status: string, refine?: (q: any) => any) {
     let q = supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('booking_status', status)
-    if (aptIds) q = q.in('apartment_id', aptIds)
+    if (bookingIds) q = q.in('id', bookingIds)
     return refine ? refine(q) : q
   }
 
@@ -317,37 +339,56 @@ export async function getBookingStatusSummary(locationId: string | null): Promis
 }
 
 export async function listBookings(filters: BookingFilters = {}): Promise<BookingListItem[]> {
-  let aptIds: string[] | null = null
+  let bookingIds: string[] | null = null
   if (filters.locationId) {
-    aptIds = await listApartmentIds(filters.locationId)
-    if (aptIds.length === 0) return []
+    bookingIds = await bookingIdsForLocation(filters.locationId)
+    if (bookingIds.length === 0) return []
   }
 
   let query = supabase.from('bookings').select(LIST_SELECT).order('created_at', { ascending: false })
   if (filters.status) query = query.eq('booking_status', filters.status)
   if (filters.paymentStatus) query = query.eq('payment_status', filters.paymentStatus)
-  if (aptIds) query = query.in('apartment_id', aptIds)
+  if (bookingIds) query = query.in('id', bookingIds)
 
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as unknown as BookingListItem[]
 }
 
-// Non-cancelled bookings shaped for the calendar view (a flat location_id on
-// the apartment, since the calendar colors events by location).
-export async function listBookingsForCalendar(locationId: string | null): Promise<CalendarBooking[]> {
+// One row per room for the calendar (each apartment's own stay), excluding
+// cancelled rooms. Flattened from the booking_apartments → booking/apartment
+// join into the shape the calendar consumes.
+export async function listRoomsForCalendar(locationId: string | null): Promise<CalendarRoom[]> {
   let aptIds: string[] | null = null
   if (locationId) {
     aptIds = await listApartmentIds(locationId)
     if (aptIds.length === 0) return []
   }
 
-  let query = supabase.from('bookings').select(CALENDAR_SELECT).neq('booking_status', BOOKING_STATUS.CANCELLED)
+  let query = supabase
+    .from('booking_apartments')
+    .select(`
+      id, booking_id, check_in_date, check_out_date, status,
+      booking:bookings(booking_reference, client:clients(full_name)),
+      apartment:apartments(apartment_number, location_id, location:locations(id, name))
+    `)
+    .neq('status', BOOKING_STATUS.CANCELLED)
   if (aptIds) query = query.in('apartment_id', aptIds)
 
   const { data, error } = await query
   if (error) throw error
-  return (data ?? []) as unknown as CalendarBooking[]
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    booking_id: r.booking_id,
+    booking_reference: r.booking?.booking_reference ?? '',
+    check_in_date: r.check_in_date,
+    check_out_date: r.check_out_date,
+    status: r.status,
+    client: r.booking?.client ?? null,
+    apartment: r.apartment ?? null,
+  }))
 }
 
 export async function getBooking(id: string): Promise<Booking> {
@@ -356,21 +397,20 @@ export async function getBooking(id: string): Promise<Booking> {
   return data as unknown as Booking
 }
 
-// Resolves booking IDs for a set of apartments, used by payments/api.ts to
-// scope the payments list to a location without payments owning a query
-// against the bookings table itself.
+// Booking IDs that include any of the given apartments — used by payments/api
+// to scope the payments list to a location.
 export async function listBookingIdsForApartments(apartmentIds: string[]): Promise<string[]> {
   if (apartmentIds.length === 0) return []
-  const { data, error } = await supabase.from('bookings').select('id').in('apartment_id', apartmentIds)
+  const { data, error } = await supabase.from('booking_apartments').select('booking_id').in('apartment_id', apartmentIds)
   if (error) throw error
-  return (data ?? []).map(b => b.id)
+  return [...new Set((data ?? []).map(r => r.booking_id as string))]
 }
 
 export async function searchBookingsByReference(searchTerm: string, locationId: string | null): Promise<BookingSearchResult[]> {
-  let aptIds: string[] | null = null
+  let bookingIds: string[] | null = null
   if (locationId) {
-    aptIds = await listApartmentIds(locationId)
-    if (aptIds.length === 0) return []
+    bookingIds = await bookingIdsForLocation(locationId)
+    if (bookingIds.length === 0) return []
   }
 
   let query = supabase
@@ -379,85 +419,70 @@ export async function searchBookingsByReference(searchTerm: string, locationId: 
     .ilike('booking_reference', `%${searchTerm}%`)
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .limit(5)
-  if (aptIds) query = query.in('apartment_id', aptIds)
+  if (bookingIds) query = query.in('id', bookingIds)
 
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as unknown as BookingSearchResult[]
 }
 
+// Fast pre-flight for a friendly message before the DB's per-room exclusion
+// constraint has the final say. Checks a single apartment/date-range.
 export async function hasOverlappingBooking(apartmentId: string, checkInDate: string, checkOutDate: string): Promise<boolean> {
   const { data, error } = await supabase
-    .from('bookings')
+    .from('booking_apartments')
     .select('id')
     .eq('apartment_id', apartmentId)
-    .neq('booking_status', BOOKING_STATUS.CANCELLED)
+    .neq('status', BOOKING_STATUS.CANCELLED)
     .lt('check_in_date', checkOutDate)
     .gt('check_out_date', checkInDate)
   if (error) throw error
   return (data?.length ?? 0) > 0
 }
 
-async function nextBookingRef(): Promise<string> {
-  const { data, error } = await supabase.rpc('next_booking_ref')
-  if (error) throw error
-  return data
-}
-
-// Creates the booking itself (client upsert + reference generation + insert).
-// Does not record a payment — see the note above on why that's the caller's
-// job. The DB's exclusion constraint is the real guard against overlapping
-// bookings; the caller-side hasOverlappingBooking() check above is just a
-// fast pre-flight for a better error message in the common case.
-export async function createBooking({
-  client, apartmentId, checkInDate, checkOutDate, ratePerDay, totalAmount, notes, createdBy,
-}: CreateBookingInput): Promise<CreateBookingResult> {
+// Creates the booking header + all its rooms atomically via RPC (which also
+// generates the reference and derives created_by server-side). Does not record
+// a payment — the caller (NewBookingPage) does that after this resolves.
+export async function createBooking({ client, rooms, notes }: CreateBookingInput): Promise<CreateBookingResult> {
   const clientId = await findOrCreateClient(client)
-  const bookingRef = await nextBookingRef()
 
-  const { data: booking, error } = await supabase.from('bookings').insert({
-    booking_reference: bookingRef,
-    client_id: clientId,
-    apartment_id: apartmentId,
-    check_in_date: checkInDate,
-    check_out_date: checkOutDate,
-    rate_per_day: ratePerDay,
-    total_amount: totalAmount,
-    amount_paid: 0,
-    payment_status: 'unpaid',
-    booking_status: BOOKING_STATUS.CONFIRMED,
-    notes: notes || null,
-    created_by: createdBy,
-  }).select('id').single()
+  const { data, error } = await supabase.rpc('create_booking_with_apartments', {
+    p_client_id: clientId,
+    p_rooms: rooms.map(r => ({
+      apartment_id: r.apartmentId,
+      check_in_date: r.checkInDate,
+      check_out_date: r.checkOutDate,
+      rate_per_day: r.ratePerDay,
+    })),
+    p_notes: notes || null,
+  })
 
   if (error) {
     if (error.code === EXCLUSION_VIOLATION) {
-      throw new Error('This apartment is already booked for those dates. Please choose different dates or another apartment.')
+      throw new Error('One of the selected apartments is already booked for those dates. Please adjust the dates or rooms.')
     }
     throw error
   }
 
-  return { bookingId: booking.id, bookingRef }
+  return { bookingId: data.booking_id, bookingRef: data.booking_reference }
 }
 
-export async function updateBookingStatus(bookingId: string, newStatus: BookingStatus): Promise<void> {
-  const { error } = await supabase.rpc('update_booking_status', {
-    p_booking_id: bookingId,
+// Per-room check-in / check-out.
+export async function updateRoomStatus(roomId: string, newStatus: BookingStatus, notes?: string | null): Promise<void> {
+  const { error } = await supabase.rpc('update_room_status', {
+    p_booking_apartment_id: roomId,
     p_new_status: newStatus,
+    p_notes: notes ?? null,
   })
   if (error) throw error
 }
 
-export async function cancelBooking(bookingId: string, reason: string, staffEmail?: string | null, existingNotes?: string | null): Promise<void> {
-  const notes = [
-    existingNotes,
-    `Cancelled on ${todayLocalISO()} by ${staffEmail || 'staff'}: ${reason}`,
-  ].filter(Boolean).join('\n')
-
-  const { error } = await supabase.rpc('update_booking_status', {
+// Admin-only: cancels every room of a booking at once and releases the rooms.
+export async function cancelBooking(bookingId: string, reason: string, staffEmail?: string | null): Promise<void> {
+  const note = `Cancelled on ${todayLocalISO()} by ${staffEmail || 'staff'}: ${reason}`
+  const { error } = await supabase.rpc('cancel_booking', {
     p_booking_id: bookingId,
-    p_new_status: BOOKING_STATUS.CANCELLED,
-    p_notes: notes,
+    p_notes: note,
   })
   if (error) throw error
 }

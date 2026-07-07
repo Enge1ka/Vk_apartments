@@ -10,11 +10,11 @@ import { Label } from '@/shared/ui/Label'
 import { Input } from '@/shared/ui/Input'
 import { formatCurrency, formatDate, todayLocalISO } from '@/shared/lib/bookingUtils'
 import { downloadReceipt, shareReceiptWhatsApp, type ReceiptData } from '@/shared/lib/receiptGenerator'
-import { AlertTriangle, ChevronLeft, Download, Share2, Plus } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import type { BookingStatus } from '@/shared/constants/status'
-import { cancelBooking, updateBookingStatus } from '../api'
+import { cancelBooking, updateRoomStatus } from '../api'
 import { recordPayment } from '@/features/payments/api'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
@@ -33,11 +33,9 @@ export default function BookingDetailPage() {
   const { booking: rawBooking, payments, accessDenied, loading, refetch } = useBookingDetail(id!, { isRestricted, locationId, authReady })
 
   const [payDialog, setPayDialog] = useState(false)
-  const [statusDialog, setStatusDialog] = useState(false)
   const [cancelDialog, setCancelDialog] = useState(false)
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'cash' })
   const [payError, setPayError] = useState<string | null>(null)
-  const [newStatus, setNewStatus] = useState<string>('')
   const [cancelReason, setCancelReason] = useState('')
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -53,6 +51,8 @@ export default function BookingDetailPage() {
   // const has a fixed, already-non-null type instead.
   const booking = rawBooking
 
+  // The receipt is for the whole booking (one combined payment), so it lists
+  // every room with its own dates and rate.
   function receiptPayload(payment: ReceiptablePayment, amountPaid: number, outstandingBalance: number): ReceiptData {
     return {
       receiptNumber: payment.receipt_number,
@@ -60,12 +60,15 @@ export default function BookingDetailPage() {
       clientName: booking.client?.full_name,
       clientPhone: booking.client?.phone,
       clientNRC: booking.client?.nrc_or_passport,
-      apartmentNumber: booking.apartment?.apartment_number,
-      location: booking.apartment?.location?.name,
-      checkIn: booking.check_in_date,
-      checkOut: booking.check_out_date,
-      numberOfDays: booking.number_of_days,
-      ratePerDay: booking.rate_per_day,
+      location: booking.rooms[0]?.apartment?.location?.name,
+      rooms: booking.rooms.map(r => ({
+        apartmentNumber: r.apartment?.apartment_number,
+        checkIn: r.check_in_date,
+        checkOut: r.check_out_date,
+        numberOfDays: r.number_of_days,
+        ratePerDay: r.rate_per_day,
+        lineTotal: r.line_total,
+      })),
       totalAmount: booking.total_amount,
       amountPaid,
       outstandingBalance,
@@ -106,17 +109,16 @@ export default function BookingDetailPage() {
     }
   }
 
-  async function handleUpdateStatus() {
-    if (!newStatus) return
+  // Per-room check-in / check-out.
+  async function handleRoomStatus(roomId: string, newStatus: BookingStatus) {
     if (newStatus === BOOKING_STATUS.CHECKED_OUT && booking.outstanding_balance > 0) {
-      const confirmed = window.confirm(`Client has outstanding balance of ${formatCurrency(booking.outstanding_balance)}. Proceed with checkout?`)
+      const confirmed = window.confirm(`This booking still has an outstanding balance of ${formatCurrency(booking.outstanding_balance)}. Check this room out anyway?`)
       if (!confirmed) return
     }
     setSaving(true)
     try {
-      await updateBookingStatus(id!, newStatus as BookingStatus)
-      toast.success('Status updated')
-      setStatusDialog(false)
+      await updateRoomStatus(roomId, newStatus)
+      toast.success(newStatus === BOOKING_STATUS.CHECKED_IN ? 'Room checked in' : 'Room checked out')
       refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
@@ -131,13 +133,13 @@ export default function BookingDetailPage() {
       setCancelError(error)
       return
     }
-    const confirmed = window.confirm('Cancel this booking and release the apartment? Payment history will be kept for audit.')
+    const confirmed = window.confirm('Cancel this booking and release all its rooms? Payment history will be kept for audit.')
     if (!confirmed) return
 
     setSaving(true)
     try {
-      await cancelBooking(id!, value!, user?.email, booking.notes)
-      toast.success('Booking cancelled and apartment released')
+      await cancelBooking(id!, value!, user?.email)
+      toast.success('Booking cancelled and rooms released')
       setCancelDialog(false)
       setCancelReason('')
       setCancelError(null)
@@ -166,6 +168,7 @@ export default function BookingDetailPage() {
   }
 
   const sb = getBadge(BOOKING_STATUS_BADGE, booking.booking_status)
+  const isCancelled = booking.booking_status === BOOKING_STATUS.CANCELLED
 
   return (
     <div className="p-4 space-y-4">
@@ -193,11 +196,38 @@ export default function BookingDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Apartment</CardTitle></CardHeader>
-        <CardContent className="space-y-1 text-sm pt-0">
-          <p className="font-semibold text-gray-800">{booking.apartment?.apartment_number} — {booking.apartment?.type}</p>
-          <p className="text-gray-500">{booking.apartment?.location?.name}</p>
-          <p className="text-gray-400">{formatDate(booking.check_in_date)} → {formatDate(booking.check_out_date)} ({booking.number_of_days} nights)</p>
+        <CardHeader><CardTitle>Rooms ({booking.rooms.length})</CardTitle></CardHeader>
+        <CardContent className="pt-0 divide-y divide-gray-50">
+          {booking.rooms.map(room => {
+            const rb = getBadge(BOOKING_STATUS_BADGE, room.status)
+            return (
+              <div key={room.id} className="py-3 first:pt-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm">
+                    <p className="font-semibold text-gray-800">{room.apartment?.apartment_number}{room.apartment?.type ? ` — ${room.apartment.type}` : ''}</p>
+                    <p className="text-gray-500 text-xs">{room.apartment?.location?.name}</p>
+                    <p className="text-gray-400 text-xs mt-0.5">
+                      {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)} · {room.number_of_days} nights · {formatCurrency(room.rate_per_day)}/night
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <Badge variant={rb.variant}>{rb.label}</Badge>
+                    <p className="text-xs font-semibold text-gray-700 mt-1">{formatCurrency(room.line_total)}</p>
+                  </div>
+                </div>
+                {room.status === BOOKING_STATUS.CONFIRMED && (
+                  <Button size="sm" variant="outline" className="mt-2" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_IN)} disabled={saving}>
+                    <LogIn size={14} /> Check In
+                  </Button>
+                )}
+                {room.status === BOOKING_STATUS.CHECKED_IN && (
+                  <Button size="sm" variant="outline" className="mt-2" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_OUT)} disabled={saving}>
+                    <LogOut size={14} /> Check Out
+                  </Button>
+                )}
+              </div>
+            )
+          })}
         </CardContent>
       </Card>
 
@@ -207,7 +237,7 @@ export default function BookingDetailPage() {
           <Row label="Total Amount" value={formatCurrency(booking.total_amount)} bold />
           <Row label="Amount Paid" value={formatCurrency(booking.amount_paid)} />
           <Row label="Outstanding" value={formatCurrency(booking.outstanding_balance)} bold={booking.outstanding_balance > 0} />
-          {booking.booking_status === BOOKING_STATUS.CANCELLED && booking.outstanding_balance > 0 && (
+          {isCancelled && booking.outstanding_balance > 0 && (
             <p className="text-xs text-gray-400">Booking is cancelled — this balance won't be collected through the app.</p>
           )}
           <div className="pt-1">
@@ -218,14 +248,11 @@ export default function BookingDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Button variant="outline" onClick={() => setStatusDialog(true)}>Update Status</Button>
-        <Button onClick={() => setPayDialog(true)} disabled={booking.booking_status === BOOKING_STATUS.CANCELLED}>
-          <Plus size={16} /> Record Payment
-        </Button>
-      </div>
+      <Button className="w-full" onClick={() => setPayDialog(true)} disabled={isCancelled}>
+        <Plus size={16} /> Record Payment
+      </Button>
 
-      {isAdmin && booking.booking_status !== BOOKING_STATUS.CANCELLED && (
+      {isAdmin && !isCancelled && (
         <Button variant="destructive" className="w-full" onClick={() => setCancelDialog(true)}>
           <AlertTriangle size={16} /> Cancel / Reverse Booking
         </Button>
@@ -285,37 +312,13 @@ export default function BookingDetailPage() {
         </DialogFooter>
       </Dialog>
 
-      <Dialog open={statusDialog} onClose={() => setStatusDialog(false)}>
-        <DialogHeader onClose={() => setStatusDialog(false)}>
-          <DialogTitle>Update Booking Status</DialogTitle>
-        </DialogHeader>
-        <DialogContent className="space-y-3">
-          <div>
-            <Label htmlFor="new-status">New Status</Label>
-            <Select id="new-status" value={newStatus} onChange={e => setNewStatus(e.target.value)}>
-              <option value="">Select…</option>
-              <option value={BOOKING_STATUS.CONFIRMED}>Confirmed</option>
-              <option value={BOOKING_STATUS.CHECKED_IN}>Checked In</option>
-              <option value={BOOKING_STATUS.CHECKED_OUT}>Checked Out</option>
-              {isAdmin && <option value={BOOKING_STATUS.CANCELLED}>Cancelled</option>}
-            </Select>
-          </div>
-        </DialogContent>
-        <DialogFooter>
-          <Button variant="outline" className="flex-1" onClick={() => setStatusDialog(false)}>Cancel</Button>
-          <Button className="flex-1" onClick={handleUpdateStatus} disabled={saving || !newStatus}>
-            {saving ? 'Updating…' : 'Update'}
-          </Button>
-        </DialogFooter>
-      </Dialog>
-
       <Dialog open={cancelDialog} onClose={() => setCancelDialog(false)}>
         <DialogHeader onClose={() => setCancelDialog(false)}>
           <DialogTitle>Cancel / Reverse Booking</DialogTitle>
         </DialogHeader>
         <DialogContent className="space-y-4">
           <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
-            This will mark the booking as cancelled and make the apartment available again. Existing payments and receipts stay saved for audit and refund tracking.
+            This cancels every room on the booking and makes those apartments available again. Existing payments and receipts stay saved for audit and refund tracking.
           </div>
           <div>
             <Label htmlFor="cancel-reason">Cancellation Reason</Label>

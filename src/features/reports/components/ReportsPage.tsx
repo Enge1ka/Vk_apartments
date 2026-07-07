@@ -8,11 +8,12 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts'
-import { Download, TrendingUp, AlertCircle, CreditCard, Building2 } from 'lucide-react'
+import { Download, TrendingUp, AlertCircle, CreditCard } from 'lucide-react'
 import { useAuth } from '@/features/auth/useAuth'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { useReportsData } from '../useReportsData'
 import { getPresetDates } from '../selectors'
+import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
 
 const COLORS = ['#1e3a5f', '#2d8a4e', '#b45309', '#7c3aed', '#dc2626']
 const METHOD_COLORS: Record<string, string> = { cash: '#1e3a5f', mobile_money: '#2d8a4e', bank_transfer: '#b45309', card: '#7c3aed' }
@@ -69,10 +70,10 @@ export default function ReportsPage() {
       case 'Outstanding':
         return {
           rows: [
-            ['Reference', 'Client', 'Apartment', 'Location', 'Check In', 'Check Out', 'Outstanding (ZMW)', 'Total (ZMW)'],
+            ['Reference', 'Client', 'Rooms', 'Location', 'Check In', 'Check Out', 'Outstanding (ZMW)', 'Total (ZMW)'],
             ...outstanding.bookings.map(b => [
-              b.booking_reference, b.client?.full_name ?? '', b.apartment?.apartment_number ?? '',
-              b.apartment?.location?.name ?? '', b.check_in_date, b.check_out_date, b.outstanding_balance, b.total_amount,
+              b.booking_reference, b.client?.full_name ?? '', roomNumbers(b.rooms),
+              roomLocationName(b.rooms), b.check_in_date ?? '', b.check_out_date ?? '', b.outstanding_balance, b.total_amount,
             ]),
           ],
           filename: `outstanding-${dateFrom}-${dateTo}.csv`,
@@ -234,20 +235,6 @@ export default function ReportsPage() {
             </Card>
           )}
 
-          {revenue.byApartment.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><Building2 size={16} /> Top Apartments</CardTitle></CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                {revenue.byApartment.map((a, i) => (
-                  <div key={a.name} className="flex justify-between text-sm py-1.5 border-b border-gray-50 last:border-0">
-                    <span className="text-gray-600">{i + 1}. {a.name}</span>
-                    <span className="font-semibold text-gray-900">{formatCurrency(a.amount)}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
           {revenue.total === 0 && (
             <div className="text-center py-10 text-gray-400 text-sm">No payments recorded in this period.</div>
           )}
@@ -323,7 +310,7 @@ export default function ReportsPage() {
                     <div>
                       <p className="font-semibold text-gray-900">{b.client?.full_name}</p>
                       <p className="text-xs font-mono text-gray-400">{b.booking_reference}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{b.apartment?.apartment_number} · {b.apartment?.location?.name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}</p>
                       <p className="text-xs text-gray-400">{formatDate(b.check_in_date)} → {formatDate(b.check_out_date)}</p>
                     </div>
                     <div className="text-right">
