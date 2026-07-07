@@ -5,13 +5,15 @@ import type { OutstandingBooking } from '@/features/bookings/api'
 import type { Apartment } from '@/features/apartments/api'
 
 describe('summarizeRevenue', () => {
+  // A payment's location comes from its booking's first room.
+  const room = (name: string) => ({ rooms: [{ apartment: { apartment_number: 'x', location: { name } } }] })
   const payments = [
-    { amount: '100', payment_method: 'cash', payment_date: '2026-01-05', booking: { apartment: { apartment_number: 'A01', location: { name: 'Nkana East' } } } },
-    { amount: '50', payment_method: 'mobile_money', payment_date: '2026-01-05', booking: { apartment: { apartment_number: 'A02', location: { name: 'Ndola' } } } },
-    { amount: '25', payment_method: 'cash', payment_date: '2026-01-06', booking: { apartment: { apartment_number: 'A01', location: { name: 'Nkana East' } } } },
+    { amount: '100', payment_method: 'cash', payment_date: '2026-01-05', booking: room('Nkana East') },
+    { amount: '50', payment_method: 'mobile_money', payment_date: '2026-01-05', booking: room('Ndola') },
+    { amount: '25', payment_method: 'cash', payment_date: '2026-01-06', booking: room('Nkana East') },
   ] as unknown as Payment[]
 
-  it('sums the total and groups by method, location, apartment, and day', () => {
+  it('sums the total and groups by method, location, and day', () => {
     const result = summarizeRevenue(payments)
     expect(result.total).toBe(175)
     expect(result.byMethod).toEqual(expect.arrayContaining([
@@ -22,12 +24,11 @@ describe('summarizeRevenue', () => {
       { name: 'Nkana East', value: 125 },
       { name: 'Ndola', value: 50 },
     ]))
-    expect(result.byApartment[0]).toEqual({ name: 'A01', amount: 125 })
     expect(result.daily).toEqual([{ date: '01-05', amount: 150 }, { date: '01-06', amount: 25 }])
   })
 
   it('handles an empty payment list', () => {
-    expect(summarizeRevenue([])).toEqual({ total: 0, byMethod: [], byLocation: [], byApartment: [], daily: [] })
+    expect(summarizeRevenue([])).toEqual({ total: 0, byMethod: [], byLocation: [], daily: [] })
   })
 })
 

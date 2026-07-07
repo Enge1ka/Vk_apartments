@@ -6,6 +6,7 @@ import { Badge } from '@/shared/ui/Badge'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import { BOOKING_STATUS } from '@/shared/constants/status'
+import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
   TrendingUp, Clock, LogOut, Plus, Home, type LucideIcon,
@@ -112,7 +113,7 @@ export default function DashboardPage() {
               <Link key={b.id} to={`/bookings/${b.id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                 <div>
                   <p className="text-sm font-medium text-gray-800">{b.client?.full_name}</p>
-                  <p className="text-xs text-gray-400">{b.apartment?.apartment_number} · {b.apartment?.location?.name}</p>
+                  <p className="text-xs text-gray-400">{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}</p>
                 </div>
                 <div className="text-right">
                   {b.booking_status === BOOKING_STATUS.CONFIRMED
@@ -140,7 +141,7 @@ export default function DashboardPage() {
               <Link key={b.id} to={`/bookings/${b.id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                 <div>
                   <p className="text-sm font-medium text-gray-800">{b.client?.full_name}</p>
-                  <p className="text-xs text-gray-400">{b.apartment?.apartment_number} · {b.apartment?.location?.name}</p>
+                  <p className="text-xs text-gray-400">{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}</p>
                 </div>
                 <span className="text-xs text-gray-500">{formatDate(b.check_in_date)}</span>
               </Link>
@@ -161,7 +162,7 @@ export default function DashboardPage() {
               <Link key={b.id} to={`/bookings/${b.id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                 <div>
                   <p className="text-sm font-medium text-gray-800">{b.client?.full_name}</p>
-                  <p className="text-xs text-gray-400">{b.apartment?.apartment_number} · {b.apartment?.location?.name}</p>
+                  <p className="text-xs text-gray-400">{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-gray-500">{formatDate(b.check_out_date)}</p>
@@ -183,7 +184,7 @@ export default function DashboardPage() {
               <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                 <div>
                   <p className="text-sm font-medium text-gray-800">{p.receipt_number}</p>
-                  <p className="text-xs text-gray-400">{p.booking?.booking_reference} · {p.booking?.apartment?.apartment_number}</p>
+                  <p className="text-xs text-gray-400">{p.booking?.booking_reference} · {roomNumbers(p.booking?.rooms)}</p>
                 </div>
                 <span className="text-sm font-semibold text-green-600">{formatCurrency(p.amount)}</span>
               </div>

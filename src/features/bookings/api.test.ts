@@ -4,7 +4,7 @@ import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
   cancelBooking, createBooking, getBookingStatusSummary, hasOverlappingBooking,
-  listBookingsForCalendar, listInHouse, listOutstandingBookings, updateBookingStatus,
+  listRoomsForCalendar, listInHouse, listOutstandingBookings, updateRoomStatus,
 } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
@@ -25,40 +25,29 @@ afterEach(() => {
   mockRpc.mockReset()
 })
 
-function mockBookingInsert(result: { data: { id: string } | null; error: { code?: string; message?: string } | null }) {
-  mockFrom.mockImplementation((table: string) => {
-    if (table !== 'bookings') throw new Error(`Unexpected table: ${table}`)
-    return { insert: () => ({ select: () => ({ single: () => Promise.resolve(result) }) }) } as any
-  })
-}
-
 describe('createBooking', () => {
   const args = {
     client: { full_name: 'John Banda', phone: '0970000000' },
-    apartmentId: 'apt-1',
-    checkInDate: '2026-01-01',
-    checkOutDate: '2026-01-04',
-    ratePerDay: 100,
-    totalAmount: 300,
-    createdBy: 'user-1',
+    rooms: [{ apartmentId: 'apt-1', checkInDate: '2026-01-01', checkOutDate: '2026-01-04', ratePerDay: 100 }],
   }
 
-  it('creates a booking, finding or creating the client and generating a reference', async () => {
+  it('creates a booking via the RPC, finding or creating the client and mapping rooms', async () => {
     vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
-    mockRpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null } as any)
-    mockBookingInsert({ data: { id: 'booking-1' }, error: null })
+    mockRpc.mockResolvedValue({ data: { booking_id: 'booking-1', booking_reference: 'VKL-2026-0001' }, error: null } as any)
 
     const result = await createBooking(args)
 
     expect(result).toEqual({ bookingId: 'booking-1', bookingRef: 'VKL-2026-0001' })
     expect(clientsApi.findOrCreateClient).toHaveBeenCalledWith(args.client)
-    expect(mockRpc).toHaveBeenCalledWith('next_booking_ref')
+    expect(mockRpc).toHaveBeenCalledWith('create_booking_with_apartments', expect.objectContaining({
+      p_client_id: 'client-1',
+      p_rooms: [{ apartment_id: 'apt-1', check_in_date: '2026-01-01', check_out_date: '2026-01-04', rate_per_day: 100 }],
+    }))
   })
 
   it('translates a DB exclusion-violation into a friendly overlap message', async () => {
     vi.spyOn(clientsApi, 'findOrCreateClient').mockResolvedValue('client-1')
-    mockRpc.mockResolvedValue({ data: 'VKL-2026-0001', error: null } as any)
-    mockBookingInsert({ data: null, error: { code: '23P01', message: 'exclusion violation' } })
+    mockRpc.mockResolvedValue({ data: null, error: { code: '23P01', message: 'exclusion violation' } } as any)
 
     await expect(createBooking(args)).rejects.toThrow(/already booked for those dates/)
   })
@@ -86,19 +75,32 @@ describe('hasOverlappingBooking', () => {
   })
 })
 
-describe('listBookingsForCalendar', () => {
-  it('excludes cancelled bookings and is unscoped without a location', async () => {
-    const chain = { select: () => chain, neq: vi.fn(() => Promise.resolve({ data: [{ id: 'b1' }], error: null })) }
+describe('listRoomsForCalendar', () => {
+  it('excludes cancelled rooms and flattens the booking/apartment join', async () => {
+    const chain = {
+      select: () => chain,
+      neq: vi.fn(() => Promise.resolve({
+        data: [{
+          id: 'r1', booking_id: 'b1', check_in_date: '2026-01-01', check_out_date: '2026-01-03', status: 'confirmed',
+          booking: { booking_reference: 'VKL-1', client: { full_name: 'John' } },
+          apartment: { apartment_number: '2A', location_id: 'loc-1', location: { id: 'loc-1', name: 'Nkana' } },
+        }],
+        error: null,
+      })),
+    }
     mockFrom.mockReturnValue(chain as any)
 
-    const result = await listBookingsForCalendar(null)
-    expect(chain.neq).toHaveBeenCalledWith('booking_status', 'cancelled')
-    expect(result).toEqual([{ id: 'b1' }])
+    const result = await listRoomsForCalendar(null)
+    expect(chain.neq).toHaveBeenCalledWith('status', 'cancelled')
+    expect(result[0]).toMatchObject({
+      id: 'r1', booking_id: 'b1', booking_reference: 'VKL-1',
+      client: { full_name: 'John' }, apartment: { apartment_number: '2A' },
+    })
   })
 
   it('short-circuits when the location has no apartments', async () => {
     vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
-    await expect(listBookingsForCalendar('loc-1')).resolves.toEqual([])
+    await expect(listRoomsForCalendar('loc-1')).resolves.toEqual([])
     expect(mockFrom).not.toHaveBeenCalled()
   })
 })
@@ -171,23 +173,21 @@ describe('getBookingStatusSummary', () => {
   })
 })
 
-describe('updateBookingStatus / cancelBooking', () => {
-  it('calls the update_booking_status RPC with the new status', async () => {
+describe('updateRoomStatus / cancelBooking', () => {
+  it('calls the update_room_status RPC with the room id and new status', async () => {
     mockRpc.mockResolvedValue({ data: null, error: null } as any)
-    await updateBookingStatus('booking-1', 'checked_in')
-    expect(mockRpc).toHaveBeenCalledWith('update_booking_status', {
-      p_booking_id: 'booking-1', p_new_status: 'checked_in',
+    await updateRoomStatus('room-1', 'checked_in')
+    expect(mockRpc).toHaveBeenCalledWith('update_room_status', {
+      p_booking_apartment_id: 'room-1', p_new_status: 'checked_in', p_notes: null,
     })
   })
 
-  it('cancelBooking appends a cancellation note and sets status to cancelled', async () => {
+  it('cancelBooking calls the cancel_booking RPC with a reason note', async () => {
     mockRpc.mockResolvedValue({ data: null, error: null } as any)
-    await cancelBooking('booking-1', 'Guest cancelled', 'staff@vk.com', 'Existing note')
+    await cancelBooking('booking-1', 'Guest cancelled', 'staff@vk.com')
 
-    expect(mockRpc).toHaveBeenCalledWith('update_booking_status', expect.objectContaining({
+    expect(mockRpc).toHaveBeenCalledWith('cancel_booking', expect.objectContaining({
       p_booking_id: 'booking-1',
-      p_new_status: 'cancelled',
-      p_notes: expect.stringContaining('Existing note'),
     }))
     const callArgs = mockRpc.mock.calls.at(-1)?.[1] as { p_notes: string }
     expect(callArgs.p_notes).toContain('Guest cancelled')

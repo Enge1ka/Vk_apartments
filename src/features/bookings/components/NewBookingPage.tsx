@@ -8,97 +8,121 @@ import { Select } from '@/shared/ui/Select'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { formatCurrency, calcDays, calcTotal, todayLocalISO } from '@/shared/lib/bookingUtils'
 import { downloadReceipt } from '@/shared/lib/receiptGenerator'
-import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { APARTMENT_STATUS, PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
 import { listApartments, type Apartment } from '@/features/apartments/api'
 import { listLocations, type Location } from '@/features/locations/api'
 import { recordPayment } from '@/features/payments/api'
-import { createBooking, hasOverlappingBooking } from '../api'
-import { validateApartmentStep, validateClientStep, validateInitialPayment } from '../validators'
+import { createBooking } from '../api'
+import { validateClientStep, validateInitialPayment } from '../validators'
 
-const STEPS = ['Client', 'Apartment', 'Payment', 'Confirm']
+const STEPS = ['Client', 'Rooms', 'Payment', 'Confirm']
 
-interface NewBookingFormState {
+interface RoomEntry {
+  apartment_id: string
+  apartment_number: string
+  check_in_date: string
+  check_out_date: string
+  rate_per_day: number
+}
+
+interface ClientState {
   full_name: string
   nrc_or_passport: string
   phone: string
   email: string
   company: string
-  location_id: string
-  apartment_id: string
-  check_in_date: string
-  check_out_date: string
-  rate_per_day: string
-  amount_to_pay: string
-  payment_method: string
-  notes: string
 }
 
-const EMPTY: NewBookingFormState = {
-  full_name: '', nrc_or_passport: '', phone: '', email: '', company: '',
-  location_id: '', apartment_id: '', check_in_date: '', check_out_date: '',
-  rate_per_day: '', amount_to_pay: '', payment_method: PAYMENT_METHOD.CASH, notes: '',
-}
+const EMPTY_CLIENT: ClientState = { full_name: '', nrc_or_passport: '', phone: '', email: '', company: '' }
+const EMPTY_DRAFT = { apartment_id: '', check_in_date: '', check_out_date: '', rate_per_day: '' }
 
 export default function NewBookingPage() {
   const { user, isRestricted, locationId } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState<NewBookingFormState>(EMPTY)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  const [client, setClient] = useState<ClientState>(EMPTY_CLIENT)
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
+
+  const [locationIdSel, setLocationIdSel] = useState('')
   const [locations, setLocations] = useState<Location[]>([])
   const [apartments, setApartments] = useState<Apartment[]>([])
+  const [rooms, setRooms] = useState<RoomEntry[]>([])
+  const [draft, setDraft] = useState(EMPTY_DRAFT)
+
+  const [amountToPay, setAmountToPay] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState<string>(PAYMENT_METHOD.CASH)
+  const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const days = calcDays(form.check_in_date, form.check_out_date)
-  const totalAmount = calcTotal(days, Number(form.rate_per_day) || 0)
-  const outstandingBalance = totalAmount - (Number(form.amount_to_pay) || 0)
+  const totalAmount = rooms.reduce((sum, r) => sum + calcTotal(calcDays(r.check_in_date, r.check_out_date), r.rate_per_day), 0)
+  const outstandingBalance = totalAmount - (Number(amountToPay) || 0)
 
   useEffect(() => {
-    listLocations().then(allLocations => {
-      const scoped = isRestricted && locationId ? allLocations.filter(l => l.id === locationId) : allLocations
+    listLocations().then(all => {
+      const scoped = isRestricted && locationId ? all.filter(l => l.id === locationId) : all
       setLocations(scoped)
-      if (isRestricted && locationId) set('location_id', locationId)
+      if (isRestricted && locationId) setLocationIdSel(locationId)
     })
   }, [isRestricted, locationId])
 
   useEffect(() => {
-    const apartmentsForLocation = form.location_id
-      ? listApartments({ locationId: form.location_id, status: APARTMENT_STATUS.AVAILABLE })
+    const load = locationIdSel
+      ? listApartments({ locationId: locationIdSel, status: APARTMENT_STATUS.AVAILABLE })
       : Promise.resolve([])
-    apartmentsForLocation.then(setApartments)
-  }, [form.location_id])
+    load.then(setApartments)
+  }, [locationIdSel])
 
-  useEffect(() => {
-    if (!form.apartment_id) return
-    const apt = apartments.find(a => a.id === form.apartment_id)
-    if (apt) set('rate_per_day', String(apt.daily_rate))
-  }, [form.apartment_id, apartments])
-
-  function set(key: keyof NewBookingFormState, val: string) {
-    setForm(f => ({ ...f, [key]: val }))
+  // Selecting an apartment also prefills the draft rate from its daily rate.
+  function selectDraftApartment(apartmentId: string) {
+    const apt = apartments.find(a => a.id === apartmentId)
+    setDraft(d => ({ ...d, apartment_id: apartmentId, rate_per_day: apt ? String(apt.daily_rate) : '' }))
   }
 
-  function field(key: keyof NewBookingFormState) {
-    return { value: form[key], onChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => set(key, e.target.value) }
+  // Apartments not already added to this booking.
+  const availableApartments = apartments.filter(a => !rooms.some(r => r.apartment_id === a.id))
+
+  function clientField(key: keyof ClientState) {
+    return { value: client[key], onChange: (e: ChangeEvent<HTMLInputElement>) => setClient(c => ({ ...c, [key]: e.target.value })) }
+  }
+
+  function addRoom() {
+    const apt = apartments.find(a => a.id === draft.apartment_id)
+    if (!apt) { toast.error('Select an apartment'); return }
+    if (!draft.check_in_date || !draft.check_out_date) { toast.error('Enter check-in and check-out dates'); return }
+    if (draft.check_out_date <= draft.check_in_date) { toast.error('Check-out must be after check-in'); return }
+    const rate = Number(draft.rate_per_day)
+    if (!rate || rate <= 0) { toast.error('Rate per day must be greater than 0'); return }
+
+    setRooms(rs => [...rs, {
+      apartment_id: apt.id,
+      apartment_number: apt.apartment_number,
+      check_in_date: draft.check_in_date,
+      check_out_date: draft.check_out_date,
+      rate_per_day: rate,
+    }])
+    setDraft(EMPTY_DRAFT)
+  }
+
+  function removeRoom(apartmentId: string) {
+    setRooms(rs => rs.filter(r => r.apartment_id !== apartmentId))
   }
 
   function validateStep(): boolean {
     if (step === 0) {
-      const result = validateClientStep(form)
-      setErrors(result.errors)
+      const result = validateClientStep(client)
+      setClientErrors(result.errors)
       if (!result.valid) toast.error('Name and phone are required')
       return result.valid
     }
     if (step === 1) {
-      const result = validateApartmentStep(form)
-      setErrors(result.errors)
-      if (!result.valid) toast.error(Object.values(result.errors)[0])
-      return result.valid
+      if (rooms.length === 0) { toast.error('Add at least one room'); return false }
+      return true
     }
     if (step === 2) {
-      const result = validateInitialPayment(form.amount_to_pay, totalAmount)
+      const result = validateInitialPayment(amountToPay, totalAmount)
       if (!result.valid) toast.error(result.error ?? 'Invalid amount')
       return result.valid
     }
@@ -112,40 +136,25 @@ export default function NewBookingPage() {
     if (!validateStep()) return
     setSaving(true)
 
-    try {
-      const overlapping = await hasOverlappingBooking(form.apartment_id, form.check_in_date, form.check_out_date)
-      if (overlapping) {
-        toast.error('This apartment is already booked for those dates. Please choose different dates or another apartment.')
-        setSaving(false)
-        return
-      }
-    } catch {
-      // A failed pre-flight check must not strand the form on "Creating…"
-      // forever — the DB's exclusion constraint is still the real guard.
-      toast.error('Could not verify availability. Please try again.')
-      setSaving(false)
-      return
-    }
-
-    const amountPaid = Number(form.amount_to_pay) || 0
+    const amountPaid = Number(amountToPay) || 0
 
     let booking
     try {
       booking = await createBooking({
         client: {
-          full_name: form.full_name,
-          phone: form.phone,
-          nrc_or_passport: form.nrc_or_passport,
-          email: form.email,
-          company: form.company,
+          full_name: client.full_name,
+          phone: client.phone,
+          nrc_or_passport: client.nrc_or_passport,
+          email: client.email,
+          company: client.company,
         },
-        apartmentId: form.apartment_id,
-        checkInDate: form.check_in_date,
-        checkOutDate: form.check_out_date,
-        ratePerDay: Number(form.rate_per_day),
-        totalAmount,
-        notes: form.notes,
-        createdBy: user?.id,
+        rooms: rooms.map(r => ({
+          apartmentId: r.apartment_id,
+          checkInDate: r.check_in_date,
+          checkOutDate: r.check_out_date,
+          ratePerDay: r.rate_per_day,
+        })),
+        notes,
       })
     } catch (err) {
       setSaving(false)
@@ -159,31 +168,31 @@ export default function NewBookingPage() {
           bookingId: booking.bookingId,
           amount: amountPaid,
           paymentDate: todayLocalISO(),
-          paymentMethod: form.payment_method,
+          paymentMethod,
         })
-        const apt = apartments.find(a => a.id === form.apartment_id)
         downloadReceipt({
           receiptNumber: payment.receipt_number,
           paymentDate: todayLocalISO(),
-          clientName: form.full_name,
-          clientPhone: form.phone,
-          clientNRC: form.nrc_or_passport || null,
-          apartmentNumber: apt?.apartment_number,
-          location: locations.find(l => l.id === form.location_id)?.name,
-          checkIn: form.check_in_date,
-          checkOut: form.check_out_date,
-          numberOfDays: days,
-          ratePerDay: Number(form.rate_per_day),
+          clientName: client.full_name,
+          clientPhone: client.phone,
+          clientNRC: client.nrc_or_passport || null,
+          location: locations.find(l => l.id === locationIdSel)?.name,
+          rooms: rooms.map(r => ({
+            apartmentNumber: r.apartment_number,
+            checkIn: r.check_in_date,
+            checkOut: r.check_out_date,
+            numberOfDays: calcDays(r.check_in_date, r.check_out_date),
+            ratePerDay: r.rate_per_day,
+            lineTotal: calcTotal(calcDays(r.check_in_date, r.check_out_date), r.rate_per_day),
+          })),
           totalAmount,
           amountPaid,
           outstandingBalance: totalAmount - amountPaid,
-          paymentMethod: form.payment_method,
+          paymentMethod,
           staffName: user?.email,
           bookingRef: booking.bookingRef,
         })
       } catch {
-        // The booking itself was created; only the payment failed. Route the
-        // user there instead of leaving them on a form with no way back to it.
         setSaving(false)
         toast.error('Booking created but payment failed. Please record the payment from the booking page.')
         navigate(`/bookings/${booking.bookingId}`)
@@ -195,8 +204,6 @@ export default function NewBookingPage() {
     toast.success(`Booking ${booking.bookingRef} created!`)
     navigate(`/bookings/${booking.bookingId}`)
   }
-
-  const selectedApt = apartments.find(a => a.id === form.apartment_id)
 
   return (
     <div className="p-4 space-y-4">
@@ -225,25 +232,25 @@ export default function NewBookingPage() {
             <h2 className="font-semibold text-gray-800">Client Details</h2>
             <div>
               <Label htmlFor="nb-full-name">Full Name *</Label>
-              <Input id="nb-full-name" placeholder="John Banda" {...field('full_name')} aria-invalid={!!errors.full_name} />
-              {errors.full_name && <p className="text-xs text-red-500 mt-1">{errors.full_name}</p>}
+              <Input id="nb-full-name" placeholder="John Banda" {...clientField('full_name')} aria-invalid={!!clientErrors.full_name} />
+              {clientErrors.full_name && <p className="text-xs text-red-500 mt-1">{clientErrors.full_name}</p>}
             </div>
             <div>
               <Label htmlFor="nb-phone">Phone Number *</Label>
-              <Input id="nb-phone" type="tel" placeholder="+260 97 000 0000" {...field('phone')} aria-invalid={!!errors.phone} />
-              {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+              <Input id="nb-phone" type="tel" placeholder="+260 97 000 0000" {...clientField('phone')} aria-invalid={!!clientErrors.phone} />
+              {clientErrors.phone && <p className="text-xs text-red-500 mt-1">{clientErrors.phone}</p>}
             </div>
             <div>
               <Label htmlFor="nb-nrc">NRC / Passport</Label>
-              <Input id="nb-nrc" placeholder="123456/10/1" {...field('nrc_or_passport')} />
+              <Input id="nb-nrc" placeholder="123456/10/1" {...clientField('nrc_or_passport')} />
             </div>
             <div>
               <Label htmlFor="nb-email">Email (optional)</Label>
-              <Input id="nb-email" type="email" placeholder="client@example.com" {...field('email')} />
+              <Input id="nb-email" type="email" placeholder="client@example.com" {...clientField('email')} />
             </div>
             <div>
               <Label htmlFor="nb-company">Company (optional)</Label>
-              <Input id="nb-company" placeholder="ABC Ltd" {...field('company')} />
+              <Input id="nb-company" placeholder="ABC Ltd" {...clientField('company')} />
             </div>
           </CardContent>
         </Card>
@@ -252,49 +259,73 @@ export default function NewBookingPage() {
       {step === 1 && (
         <Card>
           <CardContent className="space-y-3 pt-4">
-            <h2 className="font-semibold text-gray-800">Apartment & Dates</h2>
+            <h2 className="font-semibold text-gray-800">Rooms</h2>
             <div>
               <Label htmlFor="nb-location">Location *</Label>
-              <Select id="nb-location" {...field('location_id')} disabled={isRestricted} aria-invalid={!!errors.location_id}>
+              <Select id="nb-location" value={locationIdSel} onChange={e => { setLocationIdSel(e.target.value); setRooms([]); setDraft(EMPTY_DRAFT) }} disabled={isRestricted}>
                 <option value="">Select location…</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </Select>
             </div>
-            <div>
-              <Label htmlFor="nb-apartment">Apartment *</Label>
-              <Select id="nb-apartment" {...field('apartment_id')} disabled={!form.location_id} aria-invalid={!!errors.apartment_id}>
-                <option value="">Select apartment…</option>
-                {apartments.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.apartment_number} — {a.type} ({formatCurrency(a.daily_rate)}/day)
-                  </option>
-                ))}
-              </Select>
-              {form.location_id && apartments.length === 0 && (
-                <p className="text-xs text-red-500 mt-1">No available apartments at this location</p>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="nb-checkin">Check-in *</Label>
-                <Input id="nb-checkin" type="date" {...field('check_in_date')} aria-invalid={!!errors.check_in_date} />
-              </div>
-              <div>
-                <Label htmlFor="nb-checkout">Check-out *</Label>
-                <Input id="nb-checkout" type="date" {...field('check_out_date')} aria-invalid={!!errors.check_out_date} />
-                {errors.check_out_date && <p className="text-xs text-red-500 mt-1">{errors.check_out_date}</p>}
-              </div>
-            </div>
-            {form.apartment_id && (
-              <div>
-                <Label htmlFor="nb-rate">Rate per Day (ZMW)</Label>
-                <Input id="nb-rate" type="number" min="0" step="0.01" placeholder="0.00" {...field('rate_per_day')} />
-                <p className="text-xs text-gray-400 mt-1">Pre-filled from apartment — edit to override</p>
+
+            {rooms.length > 0 && (
+              <div className="space-y-2">
+                {rooms.map(r => {
+                  const nights = calcDays(r.check_in_date, r.check_out_date)
+                  return (
+                    <div key={r.apartment_id} className="flex items-center justify-between bg-gray-50 rounded-xl p-3 text-sm">
+                      <div>
+                        <p className="font-semibold text-gray-800">{r.apartment_number}</p>
+                        <p className="text-xs text-gray-500">{r.check_in_date} → {r.check_out_date} · {nights} nights · {formatCurrency(r.rate_per_day)}/night</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900">{formatCurrency(calcTotal(nights, r.rate_per_day))}</span>
+                        <button onClick={() => removeRoom(r.apartment_id)} aria-label={`Remove ${r.apartment_number}`} className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="flex justify-between text-sm pt-1">
+                  <span className="text-gray-500">{rooms.length} room{rooms.length > 1 ? 's' : ''}</span>
+                  <strong>{formatCurrency(totalAmount)}</strong>
+                </div>
               </div>
             )}
-            {days > 0 && (
-              <div className="bg-blue-50 rounded-xl p-3 text-sm">
-                <p className="text-blue-700"><strong>{days} nights</strong> × {formatCurrency(Number(form.rate_per_day))}/day = <strong>{formatCurrency(totalAmount)}</strong></p>
+
+            {locationIdSel && (
+              <div className="border border-dashed border-gray-200 rounded-xl p-3 space-y-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Add a room</p>
+                <div>
+                  <Label htmlFor="nb-apartment">Apartment</Label>
+                  <Select id="nb-apartment" value={draft.apartment_id} onChange={e => selectDraftApartment(e.target.value)}>
+                    <option value="">Select apartment…</option>
+                    {availableApartments.map(a => (
+                      <option key={a.id} value={a.id}>{a.apartment_number} — {a.type} ({formatCurrency(a.daily_rate)}/day)</option>
+                    ))}
+                  </Select>
+                  {availableApartments.length === 0 && <p className="text-xs text-gray-400 mt-1">No more available apartments at this location</p>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="nb-checkin">Check-in</Label>
+                    <Input id="nb-checkin" type="date" value={draft.check_in_date} onChange={e => setDraft(d => ({ ...d, check_in_date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label htmlFor="nb-checkout">Check-out</Label>
+                    <Input id="nb-checkout" type="date" value={draft.check_out_date} onChange={e => setDraft(d => ({ ...d, check_out_date: e.target.value }))} />
+                  </div>
+                </div>
+                {draft.apartment_id && (
+                  <div>
+                    <Label htmlFor="nb-rate">Rate per Day (ZMW)</Label>
+                    <Input id="nb-rate" type="number" min="0" step="0.01" value={draft.rate_per_day} onChange={e => setDraft(d => ({ ...d, rate_per_day: e.target.value }))} />
+                  </div>
+                )}
+                <Button variant="outline" className="w-full" onClick={addRoom} disabled={!draft.apartment_id}>
+                  <Plus size={16} /> Add Room
+                </Button>
               </div>
             )}
           </CardContent>
@@ -310,18 +341,18 @@ export default function NewBookingPage() {
             </div>
             <div>
               <Label htmlFor="nb-amount-to-pay">Amount to Pay Now</Label>
-              <Input id="nb-amount-to-pay" type="number" placeholder="0.00" min="0" max={totalAmount} {...field('amount_to_pay')} />
+              <Input id="nb-amount-to-pay" type="number" placeholder="0.00" min="0" max={totalAmount} value={amountToPay} onChange={e => setAmountToPay(e.target.value)} />
               <p className="text-xs text-gray-400 mt-1">Leave 0 to record as unpaid</p>
             </div>
             <div>
               <Label htmlFor="nb-payment-method">Payment Method</Label>
-              <Select id="nb-payment-method" {...field('payment_method')}>
+              <Select id="nb-payment-method" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
                 {PAYMENT_METHOD_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </Select>
             </div>
             <div>
               <Label htmlFor="nb-notes">Notes (optional)</Label>
-              <Input id="nb-notes" placeholder="Any notes…" {...field('notes')} />
+              <Input id="nb-notes" placeholder="Any notes…" value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </CardContent>
         </Card>
@@ -332,21 +363,25 @@ export default function NewBookingPage() {
           <CardContent className="space-y-3 pt-4">
             <h2 className="font-semibold text-gray-800">Booking Summary</h2>
             <div className="space-y-2 text-sm">
-              <Row label="Client" value={form.full_name} />
-              <Row label="Phone" value={form.phone} />
-              {form.nrc_or_passport && <Row label="NRC/Passport" value={form.nrc_or_passport} />}
+              <Row label="Client" value={client.full_name} />
+              <Row label="Phone" value={client.phone} />
+              {client.nrc_or_passport && <Row label="NRC/Passport" value={client.nrc_or_passport} />}
+              <Row label="Location" value={locations.find(l => l.id === locationIdSel)?.name} />
               <div className="border-t border-gray-100 my-2" />
-              <Row label="Apartment" value={selectedApt ? `${selectedApt.apartment_number} (${selectedApt.type})` : '—'} />
-              <Row label="Location" value={locations.find(l => l.id === form.location_id)?.name} />
-              <Row label="Check-in" value={form.check_in_date} />
-              <Row label="Check-out" value={form.check_out_date} />
-              <Row label="Nights" value={days} />
-              <Row label="Rate/Day" value={formatCurrency(Number(form.rate_per_day))} />
+              {rooms.map(r => {
+                const nights = calcDays(r.check_in_date, r.check_out_date)
+                return (
+                  <div key={r.apartment_id} className="flex justify-between">
+                    <span className="text-gray-500">{r.apartment_number} · {r.check_in_date}→{r.check_out_date} ({nights}n)</span>
+                    <span className="text-gray-700">{formatCurrency(calcTotal(nights, r.rate_per_day))}</span>
+                  </div>
+                )
+              })}
               <div className="border-t border-gray-100 my-2" />
               <Row label="Total Amount" value={formatCurrency(totalAmount)} bold />
-              <Row label="Paying Now" value={formatCurrency(Number(form.amount_to_pay) || 0)} />
+              <Row label="Paying Now" value={formatCurrency(Number(amountToPay) || 0)} />
               <Row label="Balance Due" value={formatCurrency(outstandingBalance)} bold={outstandingBalance > 0} />
-              {Number(form.amount_to_pay) > 0 && <Row label="Payment Method" value={form.payment_method?.replace('_', ' ')} />}
+              {Number(amountToPay) > 0 && <Row label="Payment Method" value={paymentMethod?.replace('_', ' ')} />}
             </div>
           </CardContent>
         </Card>

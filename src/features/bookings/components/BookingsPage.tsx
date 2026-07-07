@@ -12,6 +12,7 @@ import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_STATUS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import { Plus, Search, BedDouble } from 'lucide-react'
 import { listBookings } from '../api'
+import { roomNumbers, roomLocationName, roomCountLabel } from '../roomDisplay'
 
 export default function BookingsPage() {
   const { isRestricted, locationId } = useAuth()
@@ -33,7 +34,7 @@ export default function BookingsPage() {
     const matchSearch = !search ||
       b.booking_reference?.toLowerCase().includes(q) ||
       b.client?.full_name?.toLowerCase().includes(q) ||
-      b.apartment?.apartment_number?.toLowerCase().includes(q)
+      roomNumbers(b.rooms).toLowerCase().includes(q)
     return matchSearch
   })
 
@@ -99,7 +100,7 @@ export default function BookingsPage() {
                       </div>
                     </div>
                     <div className="text-sm text-gray-600">
-                      <p>{b.apartment?.apartment_number} · {b.apartment?.type} · {b.apartment?.location?.name}</p>
+                      <p>{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}{b.rooms.length > 1 ? ` · ${roomCountLabel(b.rooms)}` : ''}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{formatDate(b.check_in_date)} → {formatDate(b.check_out_date)}</p>
                     </div>
                     <div className="flex justify-between mt-2 pt-2 border-t border-gray-50">

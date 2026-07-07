@@ -14,24 +14,25 @@ export interface RevenueSummary {
   total: number
   byMethod: { name: string; value: number; key: string }[]
   byLocation: { name: string; value: number }[]
-  byApartment: { name: string; amount: number }[]
   daily: { date: string; amount: number }[]
 }
 
+// Revenue is broken down by method, location, and day. There is deliberately
+// no "by apartment": a payment now settles a whole booking that may span
+// several rooms, so it can't be attributed to a single apartment without
+// arbitrarily splitting it. Location stays exact (a booking's rooms share a
+// location), so that's the room-level breakdown we keep.
 export function summarizeRevenue(payments: Payment[]): RevenueSummary {
   const total = payments.reduce((s, p) => s + Number(p.amount), 0)
   const byMethod: Record<string, number> = {}
   const byLoc: Record<string, number> = {}
-  const byApt: Record<string, number> = {}
   const byDay: Record<string, number> = {}
 
   for (const p of payments) {
     const method = p.payment_method || 'unknown'
-    const loc = p.booking?.apartment?.location?.name || 'Unknown'
-    const apt = p.booking?.apartment?.apartment_number || 'Unknown'
+    const loc = p.booking?.rooms?.[0]?.apartment?.location?.name || 'Unknown'
     byMethod[method] = (byMethod[method] || 0) + Number(p.amount)
     byLoc[loc] = (byLoc[loc] || 0) + Number(p.amount)
-    byApt[apt] = (byApt[apt] || 0) + Number(p.amount)
     byDay[p.payment_date] = (byDay[p.payment_date] || 0) + Number(p.amount)
   }
 
@@ -39,7 +40,6 @@ export function summarizeRevenue(payments: Payment[]): RevenueSummary {
     total,
     byMethod: Object.entries(byMethod).map(([name, value]) => ({ name: METHOD_LABELS[name] || name, value, key: name })),
     byLocation: Object.entries(byLoc).map(([name, value]) => ({ name, value })),
-    byApartment: Object.entries(byApt).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, 10),
     daily: Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date: date.slice(5), amount })),
   }
 }

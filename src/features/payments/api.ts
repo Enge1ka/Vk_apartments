@@ -17,12 +17,14 @@ export interface Payment {
   recorded_by: string | null
   created_at?: string
   // Only present on rows returned by listPayments(), which joins bookings.
+  // A booking can cover several rooms, so this carries the room set rather
+  // than a single apartment.
   booking?: {
     booking_reference: string
     outstanding_balance: number
     total_amount: number
     client: { full_name: string; phone: string; nrc_or_passport: string | null } | null
-    apartment: { apartment_number: string; location: { name: string } | null } | null
+    rooms: { apartment: { apartment_number: string; location: { name: string } | null } | null }[]
   } | null
 }
 
@@ -48,7 +50,7 @@ const LIST_SELECT = `
   *, booking:bookings(
     booking_reference, outstanding_balance, total_amount,
     client:clients(full_name, phone, nrc_or_passport),
-    apartment:apartments(apartment_number, location:locations(name))
+    rooms:booking_apartments(apartment:apartments(apartment_number, location:locations(name)))
   )
 `
 

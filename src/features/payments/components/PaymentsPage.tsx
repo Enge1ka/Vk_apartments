@@ -14,6 +14,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
 import { searchBookingsByReference, type BookingSearchResult } from '@/features/bookings/api'
+import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
 import { listPayments, recordPayment, type Payment } from '../api'
 import { validatePaymentAmount } from '../validators'
 
@@ -78,8 +79,8 @@ export default function PaymentsPage() {
         clientName: p.booking?.client?.full_name,
         clientPhone: p.booking?.client?.phone,
         clientNRC: p.booking?.client?.nrc_or_passport,
-        apartmentNumber: p.booking?.apartment?.apartment_number,
-        location: p.booking?.apartment?.location?.name,
+        apartmentNumber: roomNumbers(p.booking?.rooms),
+        location: roomLocationName(p.booking?.rooms),
         totalAmount: p.booking?.total_amount,
         amountPaid: p.amount,
         outstandingBalance: p.booking?.outstanding_balance,
@@ -138,7 +139,7 @@ export default function PaymentsPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-semibold font-mono text-sm text-gray-800">{p.receipt_number}</p>
-                    <p className="text-xs text-gray-500">{p.booking?.client?.full_name} · {p.booking?.apartment?.apartment_number}</p>
+                    <p className="text-xs text-gray-500">{p.booking?.client?.full_name} · {roomNumbers(p.booking?.rooms)}</p>
                     <p className="text-xs text-gray-400">{formatDate(p.payment_date)} · {p.payment_method?.replace('_', ' ')}</p>
                   </div>
                   <div className="text-right">
@@ -184,7 +185,7 @@ export default function PaymentsPage() {
                   className={`w-full text-left p-3 rounded-xl border text-sm transition-colors ${selectedBooking?.id === b.id ? 'border-[#1e3a5f] bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
                 >
                   <p className="font-semibold font-mono">{b.booking_reference}</p>
-                  <p className="text-gray-500">{b.client?.full_name} · {b.apartment?.apartment_number}</p>
+                  <p className="text-gray-500">{b.client?.full_name} · {roomNumbers(b.rooms)}</p>
                   <p className="text-red-500 font-medium">Balance: {formatCurrency(b.outstanding_balance)}</p>
                 </button>
               ))}

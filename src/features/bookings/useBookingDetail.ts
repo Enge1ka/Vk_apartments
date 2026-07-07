@@ -15,7 +15,8 @@ export function useBookingDetail(id: string, { isRestricted, locationId, authRea
   const { data, loading, error, refetch } = useSupabaseQuery(async () => {
     if (!authReady) return null
     const booking = await getBooking(id)
-    const accessDenied = !!(isRestricted && locationId && booking.apartment?.location?.id !== locationId)
+    // A restricted user may open the booking if any of its rooms is in their location.
+    const accessDenied = !!(isRestricted && locationId && !booking.rooms.some(r => r.apartment?.location?.id === locationId))
     if (accessDenied) return { booking: null, payments: [], accessDenied: true }
     const payments = await listPaymentsForBooking(id)
     return { booking, payments, accessDenied: false }

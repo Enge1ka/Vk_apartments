@@ -1,18 +1,31 @@
 import jsPDF from 'jspdf'
 import { formatCurrency, formatDate } from './bookingUtils'
 
+export interface ReceiptRoom {
+  apartmentNumber?: string | null
+  checkIn?: string | null
+  checkOut?: string | null
+  numberOfDays?: number | null
+  ratePerDay?: number | null
+  lineTotal?: number | null
+}
+
 export interface ReceiptData {
   receiptNumber?: string
   paymentDate?: string | null
   clientName?: string | null
   clientPhone?: string | null
   clientNRC?: string | null
+  // Single-apartment fields (still used for a single-room booking and by the
+  // payment-history reprint). For a multi-room booking, pass `rooms` instead
+  // and it renders a per-room breakdown.
   apartmentNumber?: string | null
   location?: string | null
   checkIn?: string | null
   checkOut?: string | null
   numberOfDays?: number | null
   ratePerDay?: number | null
+  rooms?: ReceiptRoom[] | null
   totalAmount?: number | null
   amountPaid?: number | null
   outstandingBalance?: number | null
@@ -62,13 +75,26 @@ export function generateReceiptPDF(data: ReceiptData): jsPDF {
   line('Phone:', data.clientPhone)
   line('NRC / Passport:', data.clientNRC)
   divider()
-  line('Apartment:', data.apartmentNumber)
-  line('Location:', data.location)
-  line('Check-in:', formatDate(data.checkIn))
-  line('Check-out:', formatDate(data.checkOut))
-  line('No. of Days:', data.numberOfDays)
-  line('Rate per Day:', formatCurrency(data.ratePerDay))
-  divider()
+
+  if (data.rooms && data.rooms.length > 0) {
+    // Multi-room booking: one block per room.
+    line('Location:', data.location)
+    for (const [i, room] of data.rooms.entries()) {
+      line(`Room ${i + 1}:`, room.apartmentNumber, true)
+      line('  Stay:', `${formatDate(room.checkIn)} → ${formatDate(room.checkOut)}`)
+      line('  Nights × Rate:', `${room.numberOfDays ?? '—'} × ${formatCurrency(room.ratePerDay)}`)
+      line('  Room Total:', formatCurrency(room.lineTotal))
+    }
+    divider()
+  } else {
+    line('Apartment:', data.apartmentNumber)
+    line('Location:', data.location)
+    line('Check-in:', formatDate(data.checkIn))
+    line('Check-out:', formatDate(data.checkOut))
+    line('No. of Days:', data.numberOfDays)
+    line('Rate per Day:', formatCurrency(data.ratePerDay))
+    divider()
+  }
   line('Total Amount:', formatCurrency(data.totalAmount), true)
   line('Amount Paid (this receipt):', formatCurrency(data.amountPaid), true)
   line('Outstanding Balance:', formatCurrency(data.outstandingBalance), true)
