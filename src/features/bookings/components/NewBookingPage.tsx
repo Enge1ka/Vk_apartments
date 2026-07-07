@@ -7,6 +7,7 @@ import { Label } from '@/shared/ui/Label'
 import { Select } from '@/shared/ui/Select'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { formatCurrency, calcDays, calcTotal, todayLocalISO } from '@/shared/lib/bookingUtils'
+import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt } from '@/shared/lib/receiptGenerator'
 import { ChevronLeft, ChevronRight, Check, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -158,7 +159,7 @@ export default function NewBookingPage() {
       })
     } catch (err) {
       setSaving(false)
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
       return
     }
 
