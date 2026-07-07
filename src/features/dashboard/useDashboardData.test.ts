@@ -26,6 +26,7 @@ describe('useDashboardData', () => {
     ] as Location[])
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])
 
     const { result } = renderHook(() => useDashboardData({ isRestricted: false, locationId: null }))
@@ -43,6 +44,7 @@ describe('useDashboardData', () => {
     vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockImplementation(async (filters) => {
       // Distinguish the "today" call (has dateFrom) from the "recent" call (has limit).
       if (filters?.dateFrom) return [{ amount: '100' }, { amount: '50' }] as unknown as Payment[]
@@ -55,6 +57,28 @@ describe('useDashboardData', () => {
     expect(result.current.stats.todayRevenue).toBe(150)
   })
 
+  it('surfaces in-house stays and starts upcoming check-ins from tomorrow', async () => {
+    vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue([])
+    vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
+    vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([
+      { id: 'b-inhouse' },
+    ] as unknown as bookingsApi.InHouseBooking[])
+
+    const { result } = renderHook(() => useDashboardData({ isRestricted: false, locationId: null }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // The current stay is exposed to the dashboard...
+    expect(result.current.inHouse).toEqual([{ id: 'b-inhouse' }])
+    // ...and today's arrivals are no longer counted as "upcoming": the
+    // check-ins query starts strictly after today.
+    const today = new Date().toISOString().slice(0, 10)
+    const checkInArgs = vi.mocked(bookingsApi.listUpcomingCheckIns).mock.calls[0][0]
+    expect(checkInArgs.fromDate > today).toBe(true)
+  })
+
   it('scopes the apartments query and restricts visible locations for restricted users', async () => {
     vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue([])
     vi.spyOn(locationsApi, 'listLocations').mockResolvedValue([
@@ -63,6 +87,7 @@ describe('useDashboardData', () => {
     ] as Location[])
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])
 
     const { result } = renderHook(() => useDashboardData({ isRestricted: true, locationId: 'loc-1' }))

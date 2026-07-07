@@ -110,6 +110,20 @@ export interface UpcomingBooking {
   apartment: { apartment_number: string; location: { name: string } | null } | null
 }
 
+// A booking whose stay covers today (check-in on/before today, check-out
+// after today) and that hasn't been checked out or cancelled — i.e. the
+// guest is (or should be) in the apartment right now. Includes booking_status
+// so the UI can flag a `confirmed` one that nobody has checked in yet.
+export interface InHouseBooking {
+  id: string
+  check_in_date: string
+  check_out_date: string
+  booking_status: BookingStatus
+  outstanding_balance: number
+  client: { full_name: string } | null
+  apartment: { apartment_number: string; location: { name: string } | null } | null
+}
+
 export interface BookingFilters {
   locationId?: string
   status?: string
@@ -181,6 +195,12 @@ const UPCOMING_SELECT = `
   apartment:apartments(apartment_number, location:locations(name))
 `
 
+const INHOUSE_SELECT = `
+  id, check_in_date, check_out_date, booking_status, outstanding_balance,
+  client:clients(full_name),
+  apartment:apartments(apartment_number, location:locations(name))
+`
+
 async function listUpcomingByDate(
   dateColumn: 'check_in_date' | 'check_out_date',
   { locationId, fromDate, toDate, limit = 5 }: DateRangeFilters
@@ -208,6 +228,34 @@ async function listUpcomingByDate(
 
 export function listUpcomingCheckIns(filters: DateRangeFilters): Promise<UpcomingBooking[]> {
   return listUpcomingByDate('check_in_date', filters)
+}
+
+// Guests whose stay covers today and who haven't been checked out/cancelled.
+// This is what makes a booking created for a current stay stop reading as
+// "upcoming": once check-in date arrives it moves here (whether or not staff
+// have tapped Check In yet), instead of only appearing under future check-ins.
+export async function listInHouse(locationId: string | null): Promise<InHouseBooking[]> {
+  const today = todayLocalISO()
+
+  let aptIds: string[] | null = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase
+    .from('bookings')
+    .select(INHOUSE_SELECT)
+    .lte('check_in_date', today)
+    .gt('check_out_date', today)
+    .neq('booking_status', BOOKING_STATUS.CANCELLED)
+    .neq('booking_status', BOOKING_STATUS.CHECKED_OUT)
+    .order('check_out_date')
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as unknown as InHouseBooking[]
 }
 
 export function listUpcomingCheckOuts(filters: DateRangeFilters): Promise<UpcomingBooking[]> {
