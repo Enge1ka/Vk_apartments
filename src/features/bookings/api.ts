@@ -477,6 +477,23 @@ export async function updateRoomStatus(roomId: string, newStatus: BookingStatus,
   if (error) throw error
 }
 
+// Extends a room to a later check-out date. ratePerDay is optional — omit it
+// to keep the current rate; passing one re-prices the whole room stay. The
+// booking total/balance update server-side.
+export async function extendRoom(roomId: string, newCheckOutDate: string, ratePerDay?: number): Promise<void> {
+  const { error } = await supabase.rpc('extend_room', {
+    p_booking_apartment_id: roomId,
+    p_new_check_out_date: newCheckOutDate,
+    p_rate_per_day: ratePerDay ?? null,
+  })
+  if (error) {
+    if (error.code === EXCLUSION_VIOLATION) {
+      throw new Error('That apartment is already booked for the extended dates. Choose an earlier date or free the other booking.')
+    }
+    throw error
+  }
+}
+
 // Admin-only: cancels every room of a booking at once and releases the rooms.
 export async function cancelBooking(bookingId: string, reason: string, staffEmail?: string | null): Promise<void> {
   const note = `Cancelled on ${todayLocalISO()} by ${staffEmail || 'staff'}: ${reason}`

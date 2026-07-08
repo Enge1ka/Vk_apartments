@@ -37,6 +37,8 @@ SQL_FILES=(
   supabase-search-path-hardening.sql
   supabase-rls-tightening.sql
   supabase-auto-checkout.sql
+  supabase-multi-apartment.sql
+  supabase-extend-stay.sql
 )
 
 echo "==> Checking Supabase CLI login..."

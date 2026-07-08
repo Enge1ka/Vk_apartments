@@ -8,14 +8,14 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '
 import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
 import { Input } from '@/shared/ui/Input'
-import { formatCurrency, formatDate, todayLocalISO } from '@/shared/lib/bookingUtils'
+import { formatCurrency, formatDate, todayLocalISO, calcDays } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt, shareReceiptWhatsApp, type ReceiptData } from '@/shared/lib/receiptGenerator'
-import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import type { BookingStatus } from '@/shared/constants/status'
-import { cancelBooking, updateRoomStatus } from '../api'
+import { cancelBooking, updateRoomStatus, extendRoom, type BookingRoom } from '../api'
 import { recordPayment } from '@/features/payments/api'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
@@ -39,6 +39,8 @@ export default function BookingDetailPage() {
   const [payError, setPayError] = useState<string | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelError, setCancelError] = useState<string | null>(null)
+  const [roomToExtend, setRoomToExtend] = useState<BookingRoom | null>(null)
+  const [extendForm, setExtendForm] = useState({ check_out_date: '', rate_per_day: '' })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -120,6 +122,34 @@ export default function BookingDetailPage() {
     try {
       await updateRoomStatus(roomId, newStatus)
       toast.success(newStatus === BOOKING_STATUS.CHECKED_IN ? 'Room checked in' : 'Room checked out')
+      refetch()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openExtend(room: BookingRoom) {
+    setRoomToExtend(room)
+    // Prefill the rate with the room's current rate (the default); the date is
+    // left blank so staff must pick the new, later check-out.
+    setExtendForm({ check_out_date: '', rate_per_day: String(room.rate_per_day) })
+  }
+
+  async function handleExtend() {
+    if (!roomToExtend) return
+    if (!extendForm.check_out_date) { toast.error('Pick the new check-out date'); return }
+    if (extendForm.check_out_date <= roomToExtend.check_out_date) {
+      toast.error('New check-out must be later than the current one'); return
+    }
+    const rate = extendForm.rate_per_day === '' ? undefined : Number(extendForm.rate_per_day)
+    if (rate !== undefined && (!rate || rate <= 0)) { toast.error('Rate must be greater than 0'); return }
+    setSaving(true)
+    try {
+      await extendRoom(roomToExtend.id, extendForm.check_out_date, rate)
+      toast.success('Stay extended')
+      setRoomToExtend(null)
       refetch()
     } catch (err) {
       toast.error(getErrorMessage(err))
@@ -216,15 +246,22 @@ export default function BookingDetailPage() {
                     <p className="text-xs font-semibold text-gray-700 mt-1">{formatCurrency(room.line_total)}</p>
                   </div>
                 </div>
-                {room.status === BOOKING_STATUS.CONFIRMED && (
-                  <Button size="sm" variant="outline" className="mt-2" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_IN)} disabled={saving}>
-                    <LogIn size={14} /> Check In
-                  </Button>
-                )}
-                {room.status === BOOKING_STATUS.CHECKED_IN && (
-                  <Button size="sm" variant="outline" className="mt-2" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_OUT)} disabled={saving}>
-                    <LogOut size={14} /> Check Out
-                  </Button>
+                {(room.status === BOOKING_STATUS.CONFIRMED || room.status === BOOKING_STATUS.CHECKED_IN) && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {room.status === BOOKING_STATUS.CONFIRMED && (
+                      <Button size="sm" variant="outline" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_IN)} disabled={saving}>
+                        <LogIn size={14} /> Check In
+                      </Button>
+                    )}
+                    {room.status === BOOKING_STATUS.CHECKED_IN && (
+                      <Button size="sm" variant="outline" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_OUT)} disabled={saving}>
+                        <LogOut size={14} /> Check Out
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => openExtend(room)} disabled={saving}>
+                      <CalendarPlus size={14} /> Extend
+                    </Button>
+                  </div>
                 )}
               </div>
             )
@@ -342,6 +379,53 @@ export default function BookingDetailPage() {
           <Button variant="outline" className="flex-1" onClick={() => setCancelDialog(false)}>Keep Booking</Button>
           <Button variant="destructive" className="flex-1" onClick={handleCancelBooking} disabled={saving}>
             {saving ? 'Cancelling...' : 'Cancel Booking'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog open={!!roomToExtend} onClose={() => setRoomToExtend(null)}>
+        <DialogHeader onClose={() => setRoomToExtend(null)}>
+          <DialogTitle>Extend Stay</DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-3">
+          {roomToExtend && (() => {
+            const rate = extendForm.rate_per_day === '' ? roomToExtend.rate_per_day : Number(extendForm.rate_per_day)
+            const nights = extendForm.check_out_date ? calcDays(roomToExtend.check_in_date, extendForm.check_out_date) : 0
+            const newRoomTotal = nights * (rate || 0)
+            const rateChanged = Number(extendForm.rate_per_day) !== roomToExtend.rate_per_day
+            return (
+              <>
+                <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                  <p className="font-semibold text-gray-800">{roomToExtend.apartment?.apartment_number}</p>
+                  <p className="text-xs text-gray-500">Currently {formatDate(roomToExtend.check_in_date)} → {formatDate(roomToExtend.check_out_date)} · {formatCurrency(roomToExtend.line_total)}</p>
+                </div>
+                <div>
+                  <Label htmlFor="extend-date">New Check-out Date</Label>
+                  <Input id="extend-date" type="date" min={roomToExtend.check_out_date}
+                    value={extendForm.check_out_date} onChange={e => setExtendForm(f => ({ ...f, check_out_date: e.target.value }))} />
+                </div>
+                <div>
+                  <Label htmlFor="extend-rate">Rate per Night (ZMW)</Label>
+                  <Input id="extend-rate" type="number" min="0" step="0.01"
+                    value={extendForm.rate_per_day} onChange={e => setExtendForm(f => ({ ...f, rate_per_day: e.target.value }))} />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {rateChanged ? 'Changing the rate re-prices the whole room stay.' : 'Defaults to the current rate.'}
+                  </p>
+                </div>
+                {nights > 0 && (
+                  <div className="bg-blue-50 rounded-xl p-3 text-sm text-blue-700">
+                    New room total: <strong>{formatCurrency(newRoomTotal)}</strong> ({nights} nights)
+                    {newRoomTotal > roomToExtend.line_total && <> · <span className="font-medium">+{formatCurrency(newRoomTotal - roomToExtend.line_total)}</span> added to the balance</>}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" className="flex-1" onClick={() => setRoomToExtend(null)}>Cancel</Button>
+          <Button className="flex-1" onClick={handleExtend} disabled={saving}>
+            {saving ? 'Extending…' : 'Extend Stay'}
           </Button>
         </DialogFooter>
       </Dialog>

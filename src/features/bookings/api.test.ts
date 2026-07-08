@@ -3,7 +3,7 @@ import { supabase } from '@/shared/lib/supabase'
 import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
-  cancelBooking, createBooking, getBookingStatusSummary, hasOverlappingBooking,
+  cancelBooking, createBooking, extendRoom, getBookingStatusSummary, hasOverlappingBooking,
   listRoomsForCalendar, listInHouse, listOutstandingBookings, updateRoomStatus,
 } from './api'
 
@@ -192,5 +192,26 @@ describe('updateRoomStatus / cancelBooking', () => {
     const callArgs = mockRpc.mock.calls.at(-1)?.[1] as { p_notes: string }
     expect(callArgs.p_notes).toContain('Guest cancelled')
     expect(callArgs.p_notes).toContain('staff@vk.com')
+  })
+})
+
+describe('extendRoom', () => {
+  it('calls extend_room with the new date; omitting the rate sends null', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: null } as any)
+    await extendRoom('room-1', '2026-01-10')
+    expect(mockRpc).toHaveBeenCalledWith('extend_room', {
+      p_booking_apartment_id: 'room-1', p_new_check_out_date: '2026-01-10', p_rate_per_day: null,
+    })
+  })
+
+  it('passes a supplied rate through', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: null } as any)
+    await extendRoom('room-1', '2026-01-10', 2000)
+    expect(mockRpc).toHaveBeenCalledWith('extend_room', expect.objectContaining({ p_rate_per_day: 2000 }))
+  })
+
+  it('maps an exclusion violation to a friendly overlap message', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { code: '23P01', message: 'exclusion' } } as any)
+    await expect(extendRoom('room-1', '2026-01-10')).rejects.toThrow(/already booked for the extended dates/)
   })
 })
