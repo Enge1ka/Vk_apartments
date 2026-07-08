@@ -52,15 +52,31 @@ function phoneMatchKey(phone: string): string | null {
   return digits.length >= 7 ? digits.slice(-9) : null
 }
 
-// Looks up a client by phone number, creating one if none exists.
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+// Looks up a client for a booking, creating one if none matches.
 // Used by the booking flow, which never shows a separate "create client" step.
+//
+// Reuses an existing client ONLY when the phone AND the name match. Matching on
+// phone alone (the old behaviour) silently attached a booking for a different
+// guest to whichever client already had that number — so two bookings entered
+// with different names but a shared/mistyped phone both showed up as the same
+// earlier client, discarding the names actually typed. Requiring the name to
+// match too means a genuinely different guest gets their own client; the only
+// cost is an occasional duplicate when the same person's name is spelled
+// differently, which is far safer than merging two different people.
 export async function findOrCreateClient({ full_name, phone, nrc_or_passport, email, company }: ClientInput): Promise<string> {
   const matchKey = phoneMatchKey(phone)
-  const { data: existing, error: findError } = matchKey
-    ? await supabase.from('clients').select('id').ilike('phone', `%${matchKey}`).limit(1)
-    : await supabase.from('clients').select('id').eq('phone', phone).limit(1)
+  const { data: candidates, error: findError } = matchKey
+    ? await supabase.from('clients').select('id, full_name').ilike('phone', `%${matchKey}`)
+    : await supabase.from('clients').select('id, full_name').eq('phone', phone)
   if (findError) throw findError
-  if (existing?.[0]) return existing[0].id
+
+  const wanted = normalizeName(full_name)
+  const match = (candidates ?? []).find(c => normalizeName(c.full_name ?? '') === wanted)
+  if (match) return match.id
 
   const { data, error } = await supabase.from('clients').insert({
     full_name,
