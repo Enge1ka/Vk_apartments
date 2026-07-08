@@ -285,8 +285,80 @@ REVOKE EXECUTE ON FUNCTION cancel_booking(uuid, text) FROM PUBLIC;
 GRANT  EXECUTE ON FUNCTION cancel_booking(uuid, text) TO authenticated;
 
 -- The old booking-level update_booking_status() is superseded by
--- update_room_status()/cancel_booking(); leave it in place (harmless) or drop
--- it once the app no longer calls it.
+-- update_room_status()/cancel_booking() AND references the now-dropped
+-- bookings.apartment_id, so drop it (nothing calls it anymore).
+DROP FUNCTION IF EXISTS update_booking_status(uuid, text, text);
+
+-- ============================================================
+-- 8b. record_payment() — re-point its non-admin location check off the
+--     dropped bookings.apartment_id and onto booking_apartments. (Everything
+--     else in the function is unchanged.)
+-- ============================================================
+CREATE OR REPLACE FUNCTION record_payment(
+  p_booking_id     uuid,
+  p_amount         numeric,
+  p_payment_date   date,
+  p_payment_method text
+)
+RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_booking         record;
+  v_caller_role     text;
+  v_caller_location uuid;
+  v_receipt_num     text;
+  v_new_paid        numeric;
+  v_new_status      text;
+BEGIN
+  SELECT role, location_id INTO v_caller_role, v_caller_location
+  FROM profiles WHERE id = auth.uid();
+  IF v_caller_role IS NULL THEN
+    RAISE EXCEPTION 'Caller profile not found — access denied';
+  END IF;
+
+  IF v_caller_role <> 'admin' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM booking_apartments ba
+      JOIN apartments a ON a.id = ba.apartment_id
+      WHERE ba.booking_id = p_booking_id AND a.location_id = v_caller_location
+    ) THEN
+      RAISE EXCEPTION 'Not authorized to record payments for this booking';
+    END IF;
+  END IF;
+
+  SELECT * INTO v_booking FROM bookings WHERE id = p_booking_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Booking % not found', p_booking_id;
+  END IF;
+
+  IF p_amount <= 0 THEN
+    RAISE EXCEPTION 'Payment amount must be positive';
+  END IF;
+  IF p_amount > v_booking.outstanding_balance THEN
+    RAISE EXCEPTION 'Payment amount exceeds outstanding balance';
+  END IF;
+
+  v_receipt_num := 'RCP-' || EXTRACT(YEAR FROM CURRENT_DATE)::int
+                   || '-' || LPAD(nextval('vkl_receipt_seq')::text, 4, '0');
+
+  INSERT INTO payments (booking_id, client_id, amount, payment_date,
+                        payment_method, receipt_number, recorded_by)
+  VALUES (p_booking_id, v_booking.client_id, p_amount, p_payment_date,
+          p_payment_method, v_receipt_num, auth.uid());
+
+  v_new_paid := COALESCE(v_booking.amount_paid, 0) + p_amount;
+  v_new_status := CASE
+    WHEN v_booking.total_amount - v_new_paid <= 0 THEN 'paid'
+    WHEN v_new_paid > 0 THEN 'partial'
+    ELSE 'unpaid'
+  END;
+
+  UPDATE bookings
+  SET amount_paid = v_new_paid, payment_status = v_new_status
+  WHERE id = p_booking_id;
+
+  RETURN json_build_object('receipt_number', v_receipt_num);
+END;
+$$;
 
 -- ============================================================
 -- 9. auto_checkout_due_bookings() — per room, at 10:00 CAT (cron from
