@@ -102,17 +102,24 @@ BEGIN
 END;
 $$;
 
--- Recompute the header totals/span/status from its rooms.
+-- Recompute the header totals/span/status/payment_status from its rooms.
+-- payment_status is included (not just total_amount) because a room-total
+-- change after payment (extend_room raising it, cancel_booking lowering it)
+-- would otherwise leave the payment_status badge stale relative to the
+-- freshly-recomputed outstanding_balance — e.g. a fully-paid booking that
+-- gets extended would keep showing "PAID" while actually owing money again.
 CREATE OR REPLACE FUNCTION refresh_booking_rollup(p_booking_id uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
-  v_total   numeric;
-  v_min     date;
-  v_max     date;
-  v_live    integer;
-  v_all_out boolean;
-  v_any_in  boolean;
-  v_status  text;
+  v_total    numeric;
+  v_min      date;
+  v_max      date;
+  v_live     integer;
+  v_all_out  boolean;
+  v_any_in   boolean;
+  v_status   text;
+  v_paid     numeric;
+  v_pay_stat text;
 BEGIN
   SELECT COALESCE(sum(line_total) FILTER (WHERE status <> 'cancelled'), 0),
          min(check_in_date)  FILTER (WHERE status <> 'cancelled'),
@@ -130,11 +137,21 @@ BEGIN
     ELSE 'confirmed'
   END;
 
+  SELECT amount_paid INTO v_paid FROM bookings WHERE id = p_booking_id;
+  v_paid := COALESCE(v_paid, 0);
+
+  v_pay_stat := CASE
+    WHEN COALESCE(v_total, 0) - v_paid <= 0 THEN 'paid'
+    WHEN v_paid > 0                         THEN 'partial'
+    ELSE 'unpaid'
+  END;
+
   UPDATE bookings
   SET total_amount   = COALESCE(v_total, 0),
       check_in_date  = v_min,
       check_out_date = v_max,
       booking_status = v_status,
+      payment_status = v_pay_stat,
       updated_at     = now()
   WHERE id = p_booking_id;
 END;
