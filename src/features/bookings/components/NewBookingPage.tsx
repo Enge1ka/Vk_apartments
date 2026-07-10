@@ -8,7 +8,7 @@ import { Select } from '@/shared/ui/Select'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { formatCurrency, calcDays, calcTotal, todayLocalISO } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
-import { downloadReceipt } from '@/shared/lib/receiptGenerator'
+import { downloadReceipt } from '@/shared/lib/receiptLazy'
 import { ChevronLeft, ChevronRight, Check, Plus, Trash2, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
@@ -262,7 +262,7 @@ export default function NewBookingPage() {
           paymentDate: todayLocalISO(),
           paymentMethod,
         })
-        downloadReceipt({
+        await downloadReceipt({
           receiptNumber: payment.receipt_number,
           paymentDate: todayLocalISO(),
           clientName: client.full_name,
