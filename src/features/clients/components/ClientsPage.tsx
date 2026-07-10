@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Card, CardContent } from '@/shared/ui/Card'
 import { Input } from '@/shared/ui/Input'
 import { Label } from '@/shared/ui/Label'
-import { Search, Users } from 'lucide-react'
+import { Search, Users, ChevronRight } from 'lucide-react'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { listClients } from '../api'
@@ -38,17 +39,22 @@ export default function ClientsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(c => (
-            <Card key={c.id}>
-              <CardContent className="p-4">
-                <p className="font-semibold text-gray-900">{c.full_name}</p>
-                <p className="text-sm text-gray-500">{c.phone}</p>
-                {c.nrc_or_passport && <p className="text-xs text-gray-400">NRC: {c.nrc_or_passport}</p>}
-                {c.company && <p className="text-xs text-gray-400">{c.company}</p>}
-                {(c.bookings?.length ?? 0) > 0 && (
-                  <p className="text-xs text-gray-400 mt-2">{c.bookings?.length} booking{c.bookings?.length !== 1 ? 's' : ''}</p>
-                )}
-              </CardContent>
-            </Card>
+            <Link key={c.id} to={`/clients/${c.id}`}>
+              <Card className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-gray-900">{c.full_name}</p>
+                    <p className="text-sm text-gray-500">{c.phone}</p>
+                    {c.nrc_or_passport && <p className="text-xs text-gray-400">NRC: {c.nrc_or_passport}</p>}
+                    {c.company && <p className="text-xs text-gray-400">{c.company}</p>}
+                    {(c.bookings?.length ?? 0) > 0 && (
+                      <p className="text-xs text-gray-400 mt-2">{c.bookings?.length} booking{c.bookings?.length !== 1 ? 's' : ''}</p>
+                    )}
+                  </div>
+                  <ChevronRight size={18} className="text-gray-300 shrink-0" />
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}

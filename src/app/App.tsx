@@ -19,6 +19,7 @@ const Payments = lazy(() => import('@/features/payments/components/PaymentsPage'
 const CalendarPage = lazy(() => import('@/features/calendar/components/CalendarPage'))
 const Reports = lazy(() => import('@/features/reports/components/ReportsPage'))
 const Clients = lazy(() => import('@/features/clients/components/ClientsPage'))
+const ClientDetail = lazy(() => import('@/features/clients/components/ClientDetailPage'))
 const Settings = lazy(() => import('@/features/settings/components/SettingsPage'))
 const More = lazy(() => import('@/components/More'))
 
@@ -90,6 +91,7 @@ export default function App() {
               <Route path="/calendar" element={<Suspense fallback={<PageFallback />}><CalendarPage /></Suspense>} />
               <Route path="/reports" element={<Suspense fallback={<PageFallback />}><Reports /></Suspense>} />
               <Route path="/clients" element={<Suspense fallback={<PageFallback />}><Clients /></Suspense>} />
+              <Route path="/clients/:id" element={<Suspense fallback={<PageFallback />}><ClientDetail /></Suspense>} />
               <Route path="/more" element={<Suspense fallback={<PageFallback />}><More /></Suspense>} />
               <Route path="/settings" element={<ProtectedRoute adminOnly><Suspense fallback={<PageFallback />}><Settings /></Suspense></ProtectedRoute>} />
             </Route>
