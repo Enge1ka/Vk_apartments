@@ -9,7 +9,7 @@ import { BOOKING_STATUS } from '@/shared/constants/status'
 import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
-  TrendingUp, Clock, LogOut, Plus, Home, type LucideIcon,
+  TrendingUp, Clock, LogOut, Plus, Home, AlertTriangle, type LucideIcon,
 } from 'lucide-react'
 import { useDashboardData } from '../useDashboardData'
 
@@ -48,7 +48,7 @@ function StatCard({ label, value, sub, icon: Icon, color = 'blue' }: StatCardPro
 
 export default function DashboardPage() {
   const { user, profile, signOut, isRestricted, locationId } = useAuth()
-  const { stats, locationStats, inHouse, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading, error } = useDashboardData({ isRestricted, locationId })
+  const { stats, locationStats, inHouse, overdue, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading, error } = useDashboardData({ isRestricted, locationId })
 
   const occupancyPct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
 
@@ -78,6 +78,33 @@ export default function DashboardPage() {
         <StatCard label="Available" value={stats.available} icon={CheckCircle} color="green" />
         <StatCard label="Today Revenue" value={formatCurrency(stats.todayRevenue)} icon={TrendingUp} color="yellow" />
       </div>
+
+      {overdue.length > 0 && (
+        <Card className="border-red-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-700">
+              <AlertTriangle size={16} className="text-red-600" /> Overdue — needs attention
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 pt-0">
+            <p className="text-xs text-gray-500 -mt-1 mb-1">Past check-out but not checked out or cancelled. Check the guest out, extend the stay, or cancel.</p>
+            {overdue.map(r => (
+              <Link key={r.id} to={`/bookings/${r.booking_id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{r.client?.full_name ?? '—'}</p>
+                  <p className="text-xs text-gray-400">{r.apartment?.apartment_number} · {r.apartment?.location?.name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-medium text-red-600">Due out {formatDate(r.check_out_date)}</p>
+                  <Badge variant={r.status === BOOKING_STATUS.CHECKED_IN ? 'purple' : 'info'}>
+                    {r.status === BOOKING_STATUS.CHECKED_IN ? 'Still checked in' : 'Never checked in'}
+                  </Badge>
+                </div>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {locationStats.length > 0 && (
         <Card>

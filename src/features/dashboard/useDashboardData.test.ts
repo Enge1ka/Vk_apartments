@@ -27,6 +27,7 @@ describe('useDashboardData', () => {
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listOverdueRooms').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])
 
     const { result } = renderHook(() => useDashboardData({ isRestricted: false, locationId: null }))
@@ -45,6 +46,7 @@ describe('useDashboardData', () => {
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listOverdueRooms').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockImplementation(async (filters) => {
       // Distinguish the "today" call (has dateFrom) from the "recent" call (has limit).
       if (filters?.dateFrom) return [{ amount: '100' }, { amount: '50' }] as unknown as Payment[]
@@ -63,6 +65,7 @@ describe('useDashboardData', () => {
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listOverdueRooms').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([
       { id: 'b-inhouse' },
     ] as unknown as bookingsApi.InHouseBooking[])
@@ -88,6 +91,7 @@ describe('useDashboardData', () => {
     vi.spyOn(bookingsApi, 'listUpcomingCheckIns').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listUpcomingCheckOuts').mockResolvedValue([])
     vi.spyOn(bookingsApi, 'listInHouse').mockResolvedValue([])
+    vi.spyOn(bookingsApi, 'listOverdueRooms').mockResolvedValue([])
     vi.spyOn(paymentsApi, 'listPayments').mockResolvedValue([])
 
     const { result } = renderHook(() => useDashboardData({ isRestricted: true, locationId: 'loc-1' }))
