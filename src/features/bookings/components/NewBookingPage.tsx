@@ -9,11 +9,12 @@ import { Card, CardContent } from '@/shared/ui/Card'
 import { formatCurrency, calcDays, calcTotal, todayLocalISO } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt } from '@/shared/lib/receiptGenerator'
-import { ChevronLeft, ChevronRight, Check, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, Plus, Trash2, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { APARTMENT_STATUS, PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
 import { listApartments, type Apartment } from '@/features/apartments/api'
 import { listLocations, type Location } from '@/features/locations/api'
+import { searchClients, type Client } from '@/features/clients/api'
 import { recordPayment } from '@/features/payments/api'
 import { createBooking } from '../api'
 import { validateClientStep, validateInitialPayment } from '../validators'
@@ -46,6 +47,11 @@ export default function NewBookingPage() {
 
   const [client, setClient] = useState<ClientState>(EMPTY_CLIENT)
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
+  // Existing-client search: when a result is picked we keep its id so the
+  // booking links straight to that client; editing any field clears it.
+  const [clientSearch, setClientSearch] = useState('')
+  const [clientResults, setClientResults] = useState<Client[]>([])
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
 
   const [locationIdSel, setLocationIdSel] = useState('')
   const [locations, setLocations] = useState<Location[]>([])
@@ -86,7 +92,34 @@ export default function NewBookingPage() {
   const availableApartments = apartments.filter(a => !rooms.some(r => r.apartment_id === a.id))
 
   function clientField(key: keyof ClientState) {
-    return { value: client[key], onChange: (e: ChangeEvent<HTMLInputElement>) => setClient(c => ({ ...c, [key]: e.target.value })) }
+    return {
+      value: client[key],
+      onChange: (e: ChangeEvent<HTMLInputElement>) => {
+        // Manually editing a field means it's no longer the picked client.
+        setSelectedClientId(null)
+        setClient(c => ({ ...c, [key]: e.target.value }))
+      },
+    }
+  }
+
+  async function onClientSearch(value: string) {
+    setClientSearch(value)
+    const term = value.trim()
+    if (term.length < 2) { setClientResults([]); return }
+    try { setClientResults(await searchClients(term)) } catch { /* ignore search errors */ }
+  }
+
+  function pickClient(c: Client) {
+    setClient({
+      full_name: c.full_name ?? '',
+      phone: c.phone ?? '',
+      nrc_or_passport: c.nrc_or_passport ?? '',
+      email: c.email ?? '',
+      company: c.company ?? '',
+    })
+    setSelectedClientId(c.id)
+    setClientSearch('')
+    setClientResults([])
   }
 
   // A complete, valid room from the current draft, or null if the draft isn't
@@ -169,6 +202,7 @@ export default function NewBookingPage() {
           email: client.email,
           company: client.company,
         },
+        clientId: selectedClientId,
         rooms: rooms.map(r => ({
           apartmentId: r.apartment_id,
           checkInDate: r.check_in_date,
@@ -251,6 +285,26 @@ export default function NewBookingPage() {
         <Card>
           <CardContent className="space-y-3 pt-4">
             <h2 className="font-semibold text-gray-800">Client Details</h2>
+            <div className="relative">
+              <Label htmlFor="nb-client-search" className="sr-only">Search existing clients</Label>
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+              <Input id="nb-client-search" className="pl-9" placeholder="Search existing client by name or phone…"
+                value={clientSearch} onChange={e => onClientSearch(e.target.value)} />
+              {clientResults.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
+                  {clientResults.map(c => (
+                    <button key={c.id} type="button" onClick={() => pickClient(c)}
+                      className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                      <span className="font-medium text-gray-800">{c.full_name}</span>
+                      <span className="text-gray-400"> · {c.phone}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {selectedClientId && (
+              <p className="text-xs text-green-600">Using an existing client — edit any field to book a new one instead.</p>
+            )}
             <div>
               <Label htmlFor="nb-full-name">Full Name *</Label>
               <Input id="nb-full-name" placeholder="John Banda" {...clientField('full_name')} aria-invalid={!!clientErrors.full_name} />

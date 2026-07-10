@@ -169,6 +169,9 @@ export interface RoomInput {
 
 export interface CreateBookingInput {
   client: ClientInput
+  // Set when staff picked an existing client from search — links the booking to
+  // that client directly instead of the phone/name find-or-create path.
+  clientId?: string | null
   rooms: RoomInput[]
   notes?: string | null
 }
@@ -443,11 +446,11 @@ export async function hasOverlappingBooking(apartmentId: string, checkInDate: st
 // Creates the booking header + all its rooms atomically via RPC (which also
 // generates the reference and derives created_by server-side). Does not record
 // a payment — the caller (NewBookingPage) does that after this resolves.
-export async function createBooking({ client, rooms, notes }: CreateBookingInput): Promise<CreateBookingResult> {
-  const clientId = await findOrCreateClient(client)
+export async function createBooking({ client, clientId, rooms, notes }: CreateBookingInput): Promise<CreateBookingResult> {
+  const resolvedClientId = clientId ?? await findOrCreateClient(client)
 
   const { data, error } = await supabase.rpc('create_booking_with_apartments', {
-    p_client_id: clientId,
+    p_client_id: resolvedClientId,
     p_rooms: rooms.map(r => ({
       apartment_id: r.apartmentId,
       check_in_date: r.checkInDate,

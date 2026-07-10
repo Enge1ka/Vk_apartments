@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/shared/lib/supabase'
-import { findOrCreateClient } from './api'
+import { findOrCreateClient, searchClients } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({ supabase: { from: vi.fn() } }))
 const mockFrom = vi.mocked(supabase.from)
@@ -43,5 +43,23 @@ describe('findOrCreateClient', () => {
   it('ignores case and extra whitespace when comparing names', async () => {
     mockClients([{ id: 'frank', full_name: 'Frank  Mwale' }])
     await expect(findOrCreateClient({ full_name: '  frank mwale ', phone: '0977123456' })).resolves.toBe('frank')
+  })
+})
+
+describe('searchClients', () => {
+  it('short-circuits (no query) for a term under 2 characters', async () => {
+    await expect(searchClients('a')).resolves.toEqual([])
+    expect(mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('queries by name or phone and returns matches', async () => {
+    const chain = {
+      select: () => chain,
+      or: () => chain,
+      order: () => chain,
+      limit: () => Promise.resolve({ data: [{ id: 'c1', full_name: 'Frank' }], error: null }),
+    }
+    mockFrom.mockReturnValue(chain as unknown as ReturnType<typeof supabase.from>)
+    await expect(searchClients('fra')).resolves.toEqual([{ id: 'c1', full_name: 'Frank' }])
   })
 })

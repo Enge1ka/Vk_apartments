@@ -38,6 +38,22 @@ export async function listClients(): Promise<Client[]> {
   return data ?? []
 }
 
+// Typeahead for the booking flow: match existing clients by name or phone so
+// staff can reuse a client instead of re-entering them. Strips characters that
+// would break PostgREST's or()/ilike filter syntax.
+export async function searchClients(term: string): Promise<Client[]> {
+  const safe = term.replace(/[%,()]/g, '').trim()
+  if (safe.length < 2) return []
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, full_name, phone, nrc_or_passport, email, company')
+    .or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`)
+    .order('full_name')
+    .limit(8)
+  if (error) throw error
+  return (data ?? []) as Client[]
+}
+
 // Matches "0977123456", "+260977123456", and "260 97 712 3456" as the same
 // number — staff and clients type phone numbers inconsistently, and an
 // exact-string match would otherwise create a duplicate client per format.
