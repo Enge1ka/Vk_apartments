@@ -6,7 +6,7 @@ import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '@/shared/ui/Dialog'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
-import { downloadReceipt } from '@/shared/lib/receiptGenerator'
+import { downloadReceipt } from '@/shared/lib/receiptLazy'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { Search, Download, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -71,9 +71,9 @@ export default function PaymentsPage() {
     }
   }
 
-  function handleDownloadReceipt(p: Payment) {
+  async function handleDownloadReceipt(p: Payment) {
     try {
-      downloadReceipt({
+      await downloadReceipt({
         receiptNumber: p.receipt_number,
         paymentDate: p.payment_date,
         clientName: p.booking?.client?.full_name,
