@@ -50,6 +50,41 @@ export async function listApartments(filters: ApartmentFilters = {}): Promise<Ap
   return data ?? []
 }
 
+// Apartments at a location that are actually free for the given date range —
+// excludes maintenance apartments and any apartment with an active
+// (non-cancelled) room booking overlapping those dates, regardless of the
+// apartment's current `status` column. `status` only reflects whether a guest
+// is checked in RIGHT NOW; filtering the New Booking room picker by it (the
+// old approach) hid an apartment entirely if it happened to be occupied
+// today, even when it would already be free well before the requested future
+// check-in date. This is date-aware instead.
+export async function listAvailableApartmentsForDates(
+  locationId: string,
+  checkInDate: string,
+  checkOutDate: string,
+): Promise<Apartment[]> {
+  const { data: candidates, error } = await supabase
+    .from('apartments')
+    .select('*, location:locations(id, name, city)')
+    .eq('location_id', locationId)
+    .neq('status', APARTMENT_STATUS.MAINTENANCE)
+    .order('apartment_number')
+  if (error) throw error
+  if (!candidates || candidates.length === 0) return []
+
+  const { data: overlapping, error: overlapError } = await supabase
+    .from('booking_apartments')
+    .select('apartment_id')
+    .in('apartment_id', candidates.map(a => a.id))
+    .neq('status', BOOKING_STATUS.CANCELLED)
+    .lt('check_in_date', checkOutDate)
+    .gt('check_out_date', checkInDate)
+  if (overlapError) throw overlapError
+
+  const busy = new Set((overlapping ?? []).map(r => r.apartment_id))
+  return candidates.filter(a => !busy.has(a.id))
+}
+
 export async function createApartment(payload: ApartmentInput): Promise<void> {
   const { error } = await supabase.from('apartments').insert(payload)
   if (error) throw error

@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent } from 'react'
+import { useState, useEffect, useRef, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/features/auth/useAuth'
 import { Button } from '@/shared/ui/Button'
@@ -11,8 +11,8 @@ import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt } from '@/shared/lib/receiptGenerator'
 import { ChevronLeft, ChevronRight, Check, Plus, Trash2, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { APARTMENT_STATUS, PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
-import { listApartments, type Apartment } from '@/features/apartments/api'
+import { PAYMENT_METHOD, PAYMENT_METHOD_OPTIONS } from '@/shared/constants/status'
+import { listAvailableApartmentsForDates, type Apartment } from '@/features/apartments/api'
 import { listLocations, type Location } from '@/features/locations/api'
 import { searchClients, type Client } from '@/features/clients/api'
 import { recordPayment } from '@/features/payments/api'
@@ -56,6 +56,11 @@ export default function NewBookingPage() {
   const [locationIdSel, setLocationIdSel] = useState('')
   const [locations, setLocations] = useState<Location[]>([])
   const [apartments, setApartments] = useState<Apartment[]>([])
+  // The location|checkIn|checkOut key that `apartments` currently reflects,
+  // set only inside the availability effect's .then() (never synchronously),
+  // so "still checking" can be derived by comparing it to the requested key
+  // instead of tracked with an imperative loading flag.
+  const [lastCheckedRange, setLastCheckedRange] = useState<string | null>(null)
   const [rooms, setRooms] = useState<RoomEntry[]>([])
   const [draft, setDraft] = useState(EMPTY_DRAFT)
 
@@ -75,12 +80,35 @@ export default function NewBookingPage() {
     })
   }, [isRestricted, locationId])
 
+  // Tracks the range the in-flight lookup was FOR, mutated synchronously
+  // (a ref, not state, so it's fine inside an effect) purely so a
+  // late-resolving older lookup can tell it's been superseded and skip
+  // overwriting a newer result.
+  const latestRangeRef = useRef<string | null>(null)
+
+  // Apartments are looked up for the exact dates being entered, not by their
+  // current static status — an apartment occupied today can still be free for
+  // a future date range once its current guest checks out. Only fires once
+  // both dates are filled in and check-out is after check-in; both state
+  // writes happen inside .then()/.catch(), never synchronously in the effect
+  // body, so "still checking" (below) has to be derived rather than flagged.
   useEffect(() => {
-    const load = locationIdSel
-      ? listApartments({ locationId: locationIdSel, status: APARTMENT_STATUS.AVAILABLE })
-      : Promise.resolve([])
-    load.then(setApartments)
-  }, [locationIdSel])
+    const ready = !!locationIdSel && !!draft.check_in_date && !!draft.check_out_date && draft.check_out_date > draft.check_in_date
+    if (!ready) return
+
+    const range = `${locationIdSel}|${draft.check_in_date}|${draft.check_out_date}`
+    latestRangeRef.current = range
+    listAvailableApartmentsForDates(locationIdSel, draft.check_in_date, draft.check_out_date)
+      .then(result => {
+        if (latestRangeRef.current !== range) return
+        setApartments(result)
+        setLastCheckedRange(range)
+      })
+      .catch(() => {
+        if (latestRangeRef.current !== range) return
+        toast.error('Could not check apartment availability')
+      })
+  }, [locationIdSel, draft.check_in_date, draft.check_out_date])
 
   // Selecting an apartment also prefills the draft rate from its daily rate.
   function selectDraftApartment(apartmentId: string) {
@@ -88,8 +116,17 @@ export default function NewBookingPage() {
     setDraft(d => ({ ...d, apartment_id: apartmentId, rate_per_day: apt ? String(apt.daily_rate) : '' }))
   }
 
-  // Apartments not already added to this booking.
-  const availableApartments = apartments.filter(a => !rooms.some(r => r.apartment_id === a.id))
+  const datesReady = !!draft.check_in_date && !!draft.check_out_date && draft.check_out_date > draft.check_in_date
+  const currentRange = datesReady ? `${locationIdSel}|${draft.check_in_date}|${draft.check_out_date}` : null
+  // True whenever the requested range hasn't been fetched yet — including the
+  // instant dates become ready, before the effect's promise has resolved.
+  const checkingAvailability = datesReady && lastCheckedRange !== currentRange
+  // Free-for-these-dates apartments not already added to this booking. Empty
+  // whenever dates aren't ready or the fetch for them hasn't landed yet —
+  // regardless of whatever `apartments` still holds from a previous lookup.
+  const availableApartments = (datesReady && !checkingAvailability)
+    ? apartments.filter(a => !rooms.some(r => r.apartment_id === a.id))
+    : []
 
   function clientField(key: keyof ClientState) {
     return {
@@ -372,25 +409,34 @@ export default function NewBookingPage() {
             {locationIdSel && (
               <div className="border border-dashed border-gray-200 rounded-xl p-3 space-y-3">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Add a room</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="nb-checkin">Check-in</Label>
+                    <Input id="nb-checkin" type="date" value={draft.check_in_date}
+                      onChange={e => setDraft(d => ({ ...d, check_in_date: e.target.value, apartment_id: '', rate_per_day: '' }))} />
+                  </div>
+                  <div>
+                    <Label htmlFor="nb-checkout">Check-out</Label>
+                    <Input id="nb-checkout" type="date" value={draft.check_out_date}
+                      onChange={e => setDraft(d => ({ ...d, check_out_date: e.target.value, apartment_id: '', rate_per_day: '' }))} />
+                  </div>
+                </div>
                 <div>
                   <Label htmlFor="nb-apartment">Apartment</Label>
-                  <Select id="nb-apartment" value={draft.apartment_id} onChange={e => selectDraftApartment(e.target.value)}>
-                    <option value="">Select apartment…</option>
+                  <Select id="nb-apartment" value={draft.apartment_id} onChange={e => selectDraftApartment(e.target.value)} disabled={!datesReady || checkingAvailability}>
+                    <option value="">
+                      {!datesReady ? 'Enter dates first…' : checkingAvailability ? 'Checking availability…' : 'Select apartment…'}
+                    </option>
                     {availableApartments.map(a => (
                       <option key={a.id} value={a.id}>{a.apartment_number} — {a.type} ({formatCurrency(a.daily_rate)}/day)</option>
                     ))}
                   </Select>
-                  {availableApartments.length === 0 && <p className="text-xs text-gray-400 mt-1">No more available apartments at this location</p>}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="nb-checkin">Check-in</Label>
-                    <Input id="nb-checkin" type="date" value={draft.check_in_date} onChange={e => setDraft(d => ({ ...d, check_in_date: e.target.value }))} />
-                  </div>
-                  <div>
-                    <Label htmlFor="nb-checkout">Check-out</Label>
-                    <Input id="nb-checkout" type="date" value={draft.check_out_date} onChange={e => setDraft(d => ({ ...d, check_out_date: e.target.value }))} />
-                  </div>
+                  {!datesReady && (
+                    <p className="text-xs text-gray-400 mt-1">Enter check-in and check-out dates to see which apartments are free.</p>
+                  )}
+                  {datesReady && !checkingAvailability && availableApartments.length === 0 && (
+                    <p className="text-xs text-red-500 mt-1">No apartments free at this location for those dates.</p>
+                  )}
                 </div>
                 {draft.apartment_id && (
                   <div>
