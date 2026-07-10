@@ -6,6 +6,8 @@ import { todayLocalISO } from '@/shared/lib/bookingUtils'
 // The only module allowed to query the `payments` table directly, or call
 // the record_payment RPC.
 
+export type PaymentType = 'payment' | 'refund'
+
 export interface Payment {
   id: string
   booking_id: string
@@ -14,6 +16,11 @@ export interface Payment {
   payment_date: string
   payment_method: string
   receipt_number: string
+  // 'refund' rows represent money returned to the guest; they carry a positive
+  // amount but reduce the booking's amount_paid. Older rows may be undefined
+  // (before the payment_type column) — treat those as 'payment'.
+  payment_type?: PaymentType
+  notes?: string | null
   recorded_by: string | null
   created_at?: string
   // Only present on rows returned by listPayments(), which joins bookings.
@@ -94,6 +101,28 @@ export async function recordPayment({ bookingId, amount, paymentDate, paymentMet
     p_amount: amount,
     p_payment_date: paymentDate || todayLocalISO(),
     p_payment_method: paymentMethod,
+  })
+  if (error) throw error
+  return data
+}
+
+export interface RecordRefundInput {
+  bookingId: string
+  amount: number
+  paymentMethod: string
+  reason?: string | null
+  paymentDate?: string
+}
+
+// Admin-only: records money returned to the guest. Reduces amount_paid; can't
+// exceed what was paid (the RPC enforces both).
+export async function recordRefund({ bookingId, amount, paymentMethod, reason, paymentDate }: RecordRefundInput): Promise<RecordPaymentResult> {
+  const { data, error } = await supabase.rpc('record_refund', {
+    p_booking_id: bookingId,
+    p_amount: amount,
+    p_payment_date: paymentDate || todayLocalISO(),
+    p_payment_method: paymentMethod,
+    p_reason: reason ?? null,
   })
   if (error) throw error
   return data

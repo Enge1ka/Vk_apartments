@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/shared/lib/supabase'
 import * as apartmentsApi from '@/features/apartments/api'
 import * as bookingsApi from '@/features/bookings/api'
-import { listPayments, recordPayment } from './api'
+import { listPayments, recordPayment, recordRefund } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -76,5 +76,24 @@ describe('recordPayment', () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'exceeds balance' } } as any)
     await expect(recordPayment({ bookingId: 'booking-1', amount: 9999, paymentMethod: 'cash' }))
       .rejects.toMatchObject({ message: 'exceeds balance' })
+  })
+})
+
+describe('recordRefund', () => {
+  it('calls the record_refund RPC with amount, method, and reason', async () => {
+    mockRpc.mockResolvedValue({ data: { receipt_number: 'RFD-2026-0001' }, error: null } as any)
+
+    const result = await recordRefund({ bookingId: 'booking-1', amount: 50, paymentMethod: 'mobile_money', reason: 'Early checkout' })
+
+    expect(mockRpc).toHaveBeenCalledWith('record_refund', expect.objectContaining({
+      p_booking_id: 'booking-1', p_amount: 50, p_payment_method: 'mobile_money', p_reason: 'Early checkout',
+    }))
+    expect(result).toEqual({ receipt_number: 'RFD-2026-0001' })
+  })
+
+  it('sends a null reason when none is given', async () => {
+    mockRpc.mockResolvedValue({ data: { receipt_number: 'RFD-2026-0002' }, error: null } as any)
+    await recordRefund({ bookingId: 'booking-1', amount: 50, paymentMethod: 'cash' })
+    expect(mockRpc).toHaveBeenCalledWith('record_refund', expect.objectContaining({ p_reason: null }))
   })
 })
