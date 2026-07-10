@@ -558,6 +558,23 @@ export async function shortenRoom(roomId: string, newCheckOutDate: string): Prom
   if (error) throw error
 }
 
+// Corrects a not-yet-checked-in room's dates and rate (fix a mistake without
+// cancel + rebook). Confirmed rooms only — the RPC enforces that.
+export async function editRoom(roomId: string, checkInDate: string, checkOutDate: string, ratePerDay: number): Promise<void> {
+  const { error } = await supabase.rpc('edit_room', {
+    p_booking_apartment_id: roomId,
+    p_check_in_date: checkInDate,
+    p_check_out_date: checkOutDate,
+    p_rate_per_day: ratePerDay,
+  })
+  if (error) {
+    if (error.code === EXCLUSION_VIOLATION) {
+      throw new Error('That apartment is already booked for those dates. Choose different dates.')
+    }
+    throw error
+  }
+}
+
 // Admin-only: cancels every room of a booking at once and releases the rooms.
 export async function cancelBooking(bookingId: string, reason: string, staffEmail?: string | null): Promise<void> {
   const note = `Cancelled on ${todayLocalISO()} by ${staffEmail || 'staff'}: ${reason}`
