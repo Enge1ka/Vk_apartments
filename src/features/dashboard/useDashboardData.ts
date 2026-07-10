@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listApartments } from '@/features/apartments/api'
 import { listLocations } from '@/features/locations/api'
-import { listInHouse, listUpcomingCheckIns, listUpcomingCheckOuts, subscribeToBookingChanges } from '@/features/bookings/api'
+import { listInHouse, listOverdueRooms, listUpcomingCheckIns, listUpcomingCheckOuts, subscribeToBookingChanges } from '@/features/bookings/api'
 import { listPayments } from '@/features/payments/api'
 import { APARTMENT_STATUS } from '@/shared/constants/status'
 import { toLocalISODate, todayLocalISO } from '@/shared/lib/bookingUtils'
@@ -30,10 +30,11 @@ export function useDashboardData({ isRestricted, locationId }: UseDashboardDataA
     const tomorrow = toLocalISODate(new Date(Date.now() + 86400000))
     const locationFilter = isRestricted && locationId ? locationId : undefined
 
-    const [apartments, locations, inHouse, checkIns, checkOuts, todaysPayments, recentPayments] = await Promise.all([
+    const [apartments, locations, inHouse, overdue, checkIns, checkOuts, todaysPayments, recentPayments] = await Promise.all([
       listApartments(locationFilter ? { locationId: locationFilter } : {}),
       listLocations(),
       listInHouse(locationFilter ?? null),
+      listOverdueRooms(locationFilter ?? null),
       listUpcomingCheckIns({ locationId: locationFilter, fromDate: tomorrow, toDate: in3Days }),
       listUpcomingCheckOuts({ locationId: locationFilter, fromDate: today, toDate: in3Days }),
       listPayments({ locationId: locationFilter, dateFrom: today, dateTo: today }),
@@ -60,6 +61,7 @@ export function useDashboardData({ isRestricted, locationId }: UseDashboardDataA
       },
       locationStats,
       inHouse,
+      overdue,
       upcomingCheckIns: checkIns,
       upcomingCheckOuts: checkOuts,
       recentPayments,
@@ -76,6 +78,7 @@ export function useDashboardData({ isRestricted, locationId }: UseDashboardDataA
     stats: data?.stats ?? { total: 0, occupied: 0, available: 0, maintenance: 0, todayRevenue: 0 },
     locationStats: data?.locationStats ?? [],
     inHouse: data?.inHouse ?? [],
+    overdue: data?.overdue ?? [],
     upcomingCheckIns: data?.upcomingCheckIns ?? [],
     upcomingCheckOuts: data?.upcomingCheckOuts ?? [],
     recentPayments: data?.recentPayments ?? [],

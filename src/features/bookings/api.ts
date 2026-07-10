@@ -288,6 +288,56 @@ export async function listInHouse(locationId: string | null): Promise<InHouseBoo
   return (data ?? []) as unknown as InHouseBooking[]
 }
 
+// A room whose stay is already over (check-out before today) but that was
+// never checked out or cancelled — i.e. still 'confirmed' or 'checked_in'.
+// These are the ones needing staff attention: a guest who overstayed or whom
+// nobody processed, or a no-show that was never cancelled. The 10:00
+// auto-checkout closes checked-in rooms on their checkout day, so anything
+// lingering here is a genuine loose end (or the cron didn't run).
+export interface OverdueRoom {
+  id: string
+  booking_id: string
+  check_out_date: string
+  status: BookingStatus
+  client: { full_name: string } | null
+  apartment: { apartment_number: string; location: { name: string } | null } | null
+}
+
+export async function listOverdueRooms(locationId: string | null): Promise<OverdueRoom[]> {
+  const today = todayLocalISO()
+
+  let aptIds: string[] | null = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase
+    .from('booking_apartments')
+    .select(`
+      id, booking_id, check_out_date, status,
+      booking:bookings(client:clients(full_name)),
+      apartment:apartments(apartment_number, location:locations(name))
+    `)
+    .in('status', [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.CHECKED_IN])
+    .lt('check_out_date', today)
+    .order('check_out_date')
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    booking_id: r.booking_id,
+    check_out_date: r.check_out_date,
+    status: r.status,
+    client: r.booking?.client ?? null,
+    apartment: r.apartment ?? null,
+  }))
+}
+
 export async function listOutstandingBookings(locationId: string | null): Promise<OutstandingBooking[]> {
   let bookingIds: string[] | null = null
   if (locationId) {

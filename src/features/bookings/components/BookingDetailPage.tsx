@@ -10,7 +10,8 @@ import { Label } from '@/shared/ui/Label'
 import { Input } from '@/shared/ui/Input'
 import { formatCurrency, formatDate, todayLocalISO, calcDays } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
-import { downloadReceipt, shareReceiptWhatsApp, type ReceiptData } from '@/shared/lib/receiptGenerator'
+import { downloadReceipt, shareReceiptWhatsApp } from '@/shared/lib/receiptLazy'
+import type { ReceiptData } from '@/shared/lib/receiptGenerator'
 import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus, CalendarMinus, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
@@ -101,7 +102,7 @@ export default function BookingDetailPage() {
         paymentDate: todayLocalISO(),
       })
       toast.success(`Payment recorded — ${data.receipt_number}`)
-      downloadReceipt(receiptPayload(
+      await downloadReceipt(receiptPayload(
         { receipt_number: data.receipt_number, payment_date: todayLocalISO(), payment_method: payForm.payment_method },
         value!,
         (booking.outstanding_balance || 0) - value!,
@@ -229,17 +230,17 @@ export default function BookingDetailPage() {
     }
   }
 
-  function handleDownloadReceipt(payment: ReceiptablePayment & { amount: number }) {
+  async function handleDownloadReceipt(payment: ReceiptablePayment & { amount: number }) {
     try {
-      downloadReceipt(receiptPayload(payment, payment.amount, booking.outstanding_balance))
+      await downloadReceipt(receiptPayload(payment, payment.amount, booking.outstanding_balance))
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
   }
 
-  function handleShareReceipt(payment: ReceiptablePayment & { amount: number }) {
+  async function handleShareReceipt(payment: ReceiptablePayment & { amount: number }) {
     try {
-      shareReceiptWhatsApp(receiptPayload(payment, payment.amount, booking.outstanding_balance), booking.client?.phone)
+      await shareReceiptWhatsApp(receiptPayload(payment, payment.amount, booking.outstanding_balance), booking.client?.phone)
     } catch (err) {
       toast.error(getErrorMessage(err))
     }

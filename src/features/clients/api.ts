@@ -1,5 +1,5 @@
 import { supabase } from '@/shared/lib/supabase'
-import type { BookingStatus } from '@/shared/constants/status'
+import type { BookingStatus, PaymentStatus } from '@/shared/constants/status'
 
 // The only module allowed to query the `clients` table directly.
 
@@ -36,6 +36,40 @@ export async function listClients(): Promise<Client[]> {
     .order('created_at', { ascending: false })
   if (error) throw error
   return data ?? []
+}
+
+// A client's full stay history, for the client detail page.
+export interface ClientBookingSummary {
+  id: string
+  booking_reference: string
+  total_amount: number
+  amount_paid: number
+  outstanding_balance: number
+  booking_status: BookingStatus
+  payment_status: PaymentStatus
+  check_in_date: string | null
+  check_out_date: string | null
+  created_at: string
+}
+
+export interface ClientDetail extends Omit<Client, 'bookings'> {
+  bookings: ClientBookingSummary[]
+}
+
+export async function getClient(id: string): Promise<ClientDetail> {
+  const { data, error } = await supabase
+    .from('clients')
+    .select(`
+      *,
+      bookings(
+        id, booking_reference, total_amount, amount_paid, outstanding_balance,
+        booking_status, payment_status, check_in_date, check_out_date, created_at
+      )
+    `)
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return data as unknown as ClientDetail
 }
 
 // Typeahead for the booking flow: match existing clients by name or phone so

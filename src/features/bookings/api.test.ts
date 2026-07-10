@@ -4,7 +4,7 @@ import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
   cancelBooking, createBooking, extendRoom, shortenRoom, getBookingStatusSummary, hasOverlappingBooking,
-  listRoomsForCalendar, listInHouse, listOutstandingBookings, updateRoomStatus,
+  listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, updateRoomStatus,
 } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
@@ -101,6 +101,39 @@ describe('listRoomsForCalendar', () => {
   it('short-circuits when the location has no apartments', async () => {
     vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
     await expect(listRoomsForCalendar('loc-1')).resolves.toEqual([])
+    expect(mockFrom).not.toHaveBeenCalled()
+  })
+})
+
+describe('listOverdueRooms', () => {
+  it('filters to confirmed/checked-in rooms past checkout and flattens the join', async () => {
+    const chain = {
+      select: () => chain,
+      in: vi.fn(() => chain),
+      lt: vi.fn(() => chain),
+      order: vi.fn(() => Promise.resolve({
+        data: [{
+          id: 'r1', booking_id: 'b1', check_out_date: '2026-07-01', status: 'checked_in',
+          booking: { client: { full_name: 'Jane' } },
+          apartment: { apartment_number: '3C', location: { name: 'Ndeke' } },
+        }],
+        error: null,
+      })),
+    }
+    mockFrom.mockReturnValue(chain as any)
+
+    const result = await listOverdueRooms(null)
+    expect(chain.in).toHaveBeenCalledWith('status', ['confirmed', 'checked_in'])
+    expect(chain.lt).toHaveBeenCalledWith('check_out_date', expect.any(String))
+    expect(result[0]).toMatchObject({
+      id: 'r1', booking_id: 'b1', status: 'checked_in',
+      client: { full_name: 'Jane' }, apartment: { apartment_number: '3C' },
+    })
+  })
+
+  it('short-circuits when the location has no apartments', async () => {
+    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
+    await expect(listOverdueRooms('loc-1')).resolves.toEqual([])
     expect(mockFrom).not.toHaveBeenCalled()
   })
 })

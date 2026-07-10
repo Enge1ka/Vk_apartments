@@ -39,6 +39,8 @@ SQL_FILES=(
   supabase-auto-checkout.sql
   supabase-multi-apartment.sql
   supabase-extend-stay.sql
+  supabase-payment-status-rollup-fix.sql
+  supabase-metrics-purge.sql
   supabase-refunds-shorten.sql
 )
 
