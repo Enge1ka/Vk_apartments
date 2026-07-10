@@ -23,7 +23,7 @@ function setup() {
     locationId: null,
   } as unknown as ReturnType<typeof authHook.useAuth>)
   vi.spyOn(locationsApi, 'listLocations').mockResolvedValue(LOCATIONS)
-  vi.spyOn(apartmentsApi, 'listApartments').mockResolvedValue(APARTMENTS)
+  vi.spyOn(apartmentsApi, 'listAvailableApartmentsForDates').mockResolvedValue(APARTMENTS)
   return render(<MemoryRouter><NewBookingPage /></MemoryRouter>)
 }
 
@@ -36,13 +36,15 @@ async function toRoomsStep() {
   await waitFor(() => expect(screen.getByLabelText('Location *')).toBeInTheDocument())
 }
 
-// Adds one room (apt-1, 3 nights) on the Rooms step.
+// Picks a location, enters dates (which triggers the date-aware availability
+// lookup), waits for the apartment picker to populate, then adds apt-1.
 async function addOneRoom() {
   await userEvent.selectOptions(screen.getByLabelText('Location *'), 'loc-1')
-  await waitFor(() => expect(apartmentsApi.listApartments).toHaveBeenCalledWith({ locationId: 'loc-1', status: 'available' }))
-  await userEvent.selectOptions(screen.getByLabelText('Apartment'), 'apt-1')
   await userEvent.type(screen.getByLabelText('Check-in'), '2026-01-01')
   await userEvent.type(screen.getByLabelText('Check-out'), '2026-01-04')
+  await waitFor(() => expect(apartmentsApi.listAvailableApartmentsForDates).toHaveBeenCalledWith('loc-1', '2026-01-01', '2026-01-04'))
+  await waitFor(() => expect(screen.getByLabelText('Apartment')).toBeEnabled())
+  await userEvent.selectOptions(screen.getByLabelText('Apartment'), 'apt-1')
   await userEvent.click(screen.getByRole('button', { name: /add room/i }))
 }
 
@@ -57,6 +59,22 @@ describe('NewBookingPage', () => {
 
     expect(await screen.findByText('Full name is required')).toBeInTheDocument()
     expect(screen.queryByText('Add a room')).not.toBeInTheDocument()
+  })
+
+  it('disables the apartment picker until both dates are entered', async () => {
+    setup()
+    await toRoomsStep()
+    await userEvent.selectOptions(screen.getByLabelText('Location *'), 'loc-1')
+
+    expect(screen.getByLabelText('Apartment')).toBeDisabled()
+    expect(apartmentsApi.listAvailableApartmentsForDates).not.toHaveBeenCalled()
+
+    await userEvent.type(screen.getByLabelText('Check-in'), '2026-01-01')
+    expect(screen.getByLabelText('Apartment')).toBeDisabled()
+
+    await userEvent.type(screen.getByLabelText('Check-out'), '2026-01-04')
+    await waitFor(() => expect(screen.getByLabelText('Apartment')).toBeEnabled())
+    expect(apartmentsApi.listAvailableApartmentsForDates).toHaveBeenCalledWith('loc-1', '2026-01-01', '2026-01-04')
   })
 
   it('will not leave the Rooms step with no rooms added', async () => {
@@ -93,12 +111,12 @@ describe('NewBookingPage', () => {
   it('advances a single room filled in but not explicitly "Add Room"-ed', async () => {
     setup()
     await toRoomsStep()
-    // Fill the room draft but do NOT click "Add Room".
+    // Fill the room draft (dates, then apartment) but do NOT click "Add Room".
     await userEvent.selectOptions(screen.getByLabelText('Location *'), 'loc-1')
-    await waitFor(() => expect(apartmentsApi.listApartments).toHaveBeenCalled())
-    await userEvent.selectOptions(screen.getByLabelText('Apartment'), 'apt-1')
     await userEvent.type(screen.getByLabelText('Check-in'), '2026-01-01')
     await userEvent.type(screen.getByLabelText('Check-out'), '2026-01-04')
+    await waitFor(() => expect(screen.getByLabelText('Apartment')).toBeEnabled())
+    await userEvent.selectOptions(screen.getByLabelText('Apartment'), 'apt-1')
 
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
 
