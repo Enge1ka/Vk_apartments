@@ -11,12 +11,12 @@ import { Input } from '@/shared/ui/Input'
 import { formatCurrency, formatDate, todayLocalISO, calcDays } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt, shareReceiptWhatsApp, type ReceiptData } from '@/shared/lib/receiptGenerator'
-import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus, CalendarMinus, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import type { BookingStatus } from '@/shared/constants/status'
-import { cancelBooking, updateRoomStatus, extendRoom, type BookingRoom } from '../api'
-import { recordPayment } from '@/features/payments/api'
+import { cancelBooking, updateRoomStatus, extendRoom, shortenRoom, type BookingRoom } from '../api'
+import { recordPayment, recordRefund } from '@/features/payments/api'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
 import { useBookingDetail } from '../useBookingDetail'
@@ -41,6 +41,11 @@ export default function BookingDetailPage() {
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [roomToExtend, setRoomToExtend] = useState<BookingRoom | null>(null)
   const [extendForm, setExtendForm] = useState({ check_out_date: '', rate_per_day: '' })
+  const [roomToShorten, setRoomToShorten] = useState<BookingRoom | null>(null)
+  const [shortenDate, setShortenDate] = useState('')
+  const [refundDialog, setRefundDialog] = useState(false)
+  const [refundForm, setRefundForm] = useState({ amount: '', payment_method: 'cash', reason: '' })
+  const [refundError, setRefundError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -158,6 +163,48 @@ export default function BookingDetailPage() {
     }
   }
 
+  function openShorten(room: BookingRoom) {
+    setRoomToShorten(room)
+    setShortenDate('')
+  }
+
+  async function handleShorten() {
+    if (!roomToShorten) return
+    if (!shortenDate) { toast.error('Pick the new check-out date'); return }
+    if (shortenDate >= roomToShorten.check_out_date) { toast.error('New check-out must be earlier than the current one'); return }
+    if (shortenDate <= roomToShorten.check_in_date) { toast.error('A stay must be at least one night'); return }
+    setSaving(true)
+    try {
+      await shortenRoom(roomToShorten.id, shortenDate)
+      toast.success('Stay shortened')
+      setRoomToShorten(null)
+      refetch()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRecordRefund() {
+    const amt = Number(refundForm.amount)
+    if (!amt || amt <= 0) { setRefundError('Enter a valid amount'); return }
+    if (amt > booking.amount_paid) { setRefundError('Refund cannot exceed the amount paid'); return }
+    setSaving(true)
+    try {
+      const data = await recordRefund({ bookingId: id!, amount: amt, paymentMethod: refundForm.payment_method, reason: refundForm.reason || null })
+      toast.success(`Refund recorded — ${data.receipt_number}`)
+      setRefundDialog(false)
+      setRefundForm({ amount: '', payment_method: 'cash', reason: '' })
+      setRefundError(null)
+      refetch()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleCancelBooking() {
     const { valid, value, error } = validateCancellationReason(cancelReason)
     if (!valid) {
@@ -261,6 +308,11 @@ export default function BookingDetailPage() {
                     <Button size="sm" variant="outline" onClick={() => openExtend(room)} disabled={saving}>
                       <CalendarPlus size={14} /> Extend
                     </Button>
+                    {room.number_of_days > 1 && (
+                      <Button size="sm" variant="outline" onClick={() => openShorten(room)} disabled={saving}>
+                        <CalendarMinus size={14} /> Shorten
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -274,7 +326,14 @@ export default function BookingDetailPage() {
         <CardContent className="space-y-2 text-sm pt-0">
           <Row label="Total Amount" value={formatCurrency(booking.total_amount)} bold />
           <Row label="Amount Paid" value={formatCurrency(booking.amount_paid)} />
-          <Row label="Outstanding" value={formatCurrency(booking.outstanding_balance)} bold={booking.outstanding_balance > 0} />
+          {booking.outstanding_balance < 0 ? (
+            <Row label="Credit (overpaid)" value={formatCurrency(-booking.outstanding_balance)} bold />
+          ) : (
+            <Row label="Outstanding" value={formatCurrency(booking.outstanding_balance)} bold={booking.outstanding_balance > 0} />
+          )}
+          {booking.outstanding_balance < 0 && (
+            <p className="text-xs text-amber-600">This booking is overpaid by {formatCurrency(-booking.outstanding_balance)} — record a refund to return it.</p>
+          )}
           {isCancelled && booking.outstanding_balance > 0 && (
             <p className="text-xs text-gray-400">Booking is cancelled — this balance won't be collected through the app.</p>
           )}
@@ -290,6 +349,12 @@ export default function BookingDetailPage() {
         <Plus size={16} /> Record Payment
       </Button>
 
+      {isAdmin && booking.amount_paid > 0 && (
+        <Button variant="outline" className="w-full" onClick={() => setRefundDialog(true)}>
+          <Undo2 size={16} /> Record Refund
+        </Button>
+      )}
+
       {isAdmin && !isCancelled && (
         <Button variant="destructive" className="w-full" onClick={() => setCancelDialog(true)}>
           <AlertTriangle size={16} /> Cancel / Reverse Booking
@@ -300,23 +365,32 @@ export default function BookingDetailPage() {
         <Card>
           <CardHeader><CardTitle>Payment History</CardTitle></CardHeader>
           <CardContent className="pt-0 space-y-3">
-            {payments.map(p => (
-              <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <div>
-                  <p className="text-sm font-medium font-mono text-gray-700">{p.receipt_number}</p>
-                  <p className="text-xs text-gray-400">{formatDate(p.payment_date)} · {p.payment_method?.replace('_', ' ')}</p>
+            {payments.map(p => {
+              const isRefund = p.payment_type === 'refund'
+              return (
+                <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                  <div>
+                    <p className="text-sm font-medium font-mono text-gray-700">{p.receipt_number}{isRefund && <span className="ml-2 text-xs font-sans font-normal text-amber-600">Refund</span>}</p>
+                    <p className="text-xs text-gray-400">{formatDate(p.payment_date)} · {p.payment_method?.replace('_', ' ')}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-semibold ${isRefund ? 'text-amber-600' : 'text-green-600'}`}>
+                      {isRefund ? `-${formatCurrency(p.amount)}` : formatCurrency(p.amount)}
+                    </span>
+                    {!isRefund && (
+                      <>
+                        <button onClick={() => handleDownloadReceipt(p)} aria-label="Download receipt" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                          <Download size={16} />
+                        </button>
+                        <button onClick={() => handleShareReceipt(p)} aria-label="Share receipt on WhatsApp" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                          <Share2 size={16} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-green-600">{formatCurrency(p.amount)}</span>
-                  <button onClick={() => handleDownloadReceipt(p)} aria-label="Download receipt" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-                    <Download size={16} />
-                  </button>
-                  <button onClick={() => handleShareReceipt(p)} aria-label="Share receipt on WhatsApp" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-                    <Share2 size={16} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </CardContent>
         </Card>
       )}
@@ -371,7 +445,7 @@ export default function BookingDetailPage() {
           </div>
           {booking.amount_paid > 0 && (
             <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-              Paid amount on record: <strong>{formatCurrency(booking.amount_paid)}</strong>. Record any refund outside this cancellation step until refund tracking is added.
+              Paid amount on record: <strong>{formatCurrency(booking.amount_paid)}</strong>. After cancelling, this becomes a credit — use <strong>Record Refund</strong> to return it.
             </div>
           )}
         </DialogContent>
@@ -426,6 +500,80 @@ export default function BookingDetailPage() {
           <Button variant="outline" className="flex-1" onClick={() => setRoomToExtend(null)}>Cancel</Button>
           <Button className="flex-1" onClick={handleExtend} disabled={saving}>
             {saving ? 'Extending…' : 'Extend Stay'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog open={!!roomToShorten} onClose={() => setRoomToShorten(null)}>
+        <DialogHeader onClose={() => setRoomToShorten(null)}>
+          <DialogTitle>Shorten Stay</DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-3">
+          {roomToShorten && (() => {
+            const nights = shortenDate ? calcDays(roomToShorten.check_in_date, shortenDate) : 0
+            const newRoomTotal = nights * roomToShorten.rate_per_day
+            const valid = nights > 0 && shortenDate < roomToShorten.check_out_date
+            return (
+              <>
+                <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                  <p className="font-semibold text-gray-800">{roomToShorten.apartment?.apartment_number}</p>
+                  <p className="text-xs text-gray-500">Currently {formatDate(roomToShorten.check_in_date)} → {formatDate(roomToShorten.check_out_date)} · {formatCurrency(roomToShorten.line_total)}</p>
+                </div>
+                <div>
+                  <Label htmlFor="shorten-date">New (earlier) Check-out Date</Label>
+                  <Input id="shorten-date" type="date" min={roomToShorten.check_in_date} max={roomToShorten.check_out_date}
+                    value={shortenDate} onChange={e => setShortenDate(e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">Rate stays the same; the room is billed for fewer nights.</p>
+                </div>
+                {valid && (
+                  <div className="bg-blue-50 rounded-xl p-3 text-sm text-blue-700">
+                    New room total: <strong>{formatCurrency(newRoomTotal)}</strong> ({nights} nights)
+                    {newRoomTotal < roomToShorten.line_total && <> · <span className="font-medium">−{formatCurrency(roomToShorten.line_total - newRoomTotal)}</span> off the total</>}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" className="flex-1" onClick={() => setRoomToShorten(null)}>Cancel</Button>
+          <Button className="flex-1" onClick={handleShorten} disabled={saving}>
+            {saving ? 'Saving…' : 'Shorten Stay'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog open={refundDialog} onClose={() => setRefundDialog(false)}>
+        <DialogHeader onClose={() => setRefundDialog(false)}>
+          <DialogTitle>Record Refund</DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-3">
+          <div className="bg-amber-50 rounded-xl p-3 text-sm text-amber-800">
+            Paid on record: <strong>{formatCurrency(booking.amount_paid)}</strong>
+            {booking.outstanding_balance < 0 && <> · overpaid by <strong>{formatCurrency(-booking.outstanding_balance)}</strong></>}
+          </div>
+          <div>
+            <Label htmlFor="refund-amount">Refund Amount (ZMW)</Label>
+            <Input id="refund-amount" type="number" min="1" max={booking.amount_paid} placeholder="0.00"
+              value={refundForm.amount} onChange={e => setRefundForm(f => ({ ...f, amount: e.target.value }))} aria-invalid={!!refundError} />
+            {refundError && <p className="text-xs text-red-500 mt-1">{refundError}</p>}
+          </div>
+          <div>
+            <Label htmlFor="refund-method">Refund Method</Label>
+            <Select id="refund-method" value={refundForm.payment_method} onChange={e => setRefundForm(f => ({ ...f, payment_method: e.target.value }))}>
+              {PAYMENT_METHOD_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="refund-reason">Reason (optional)</Label>
+            <Input id="refund-reason" placeholder="Early checkout, cancellation…"
+              value={refundForm.reason} onChange={e => setRefundForm(f => ({ ...f, reason: e.target.value }))} />
+          </div>
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" className="flex-1" onClick={() => setRefundDialog(false)}>Cancel</Button>
+          <Button className="flex-1" onClick={handleRecordRefund} disabled={saving}>
+            {saving ? 'Saving…' : 'Record Refund'}
           </Button>
         </DialogFooter>
       </Dialog>

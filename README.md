@@ -40,6 +40,7 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    - `supabase-multi-apartment.sql` — introduces combined multi-apartment bookings: a `booking_apartments` line-item table (one row per room, each with its own dates, rate, and status), moves per-room overlap prevention there, backfills existing bookings, and adds the `create_booking_with_apartments` / `update_room_status` / `cancel_booking` RPCs (with per-room `auto_checkout` and rollup helpers). Reshapes the `bookings` header — **test on staging first**; it's wrapped in a transaction.
    - `supabase-extend-stay.sql` — adds `extend_room()`, which moves a room's check-out date later (optionally at a new rate) and recomputes the booking total/balance, blocking extensions that would overlap another booking.
    - `supabase-payment-status-rollup-fix.sql` — fixes `refresh_booking_rollup()` (used by `extend_room`, `cancel_booking`, and others) to also recompute `payment_status`, not just `total_amount`. Without this, extending a fully-paid booking left it showing "PAID" while actually owing money again.
+   - `supabase-refunds-shorten.sql` — adds a `payment_type` column, `record_refund()` (admin-only; records money returned to a guest and settles a negative balance), and `shorten_room()` (move a room's check-out earlier for an early departure).
 
    See [docs/database.md](docs/database.md) for the full schema reference.
 

@@ -3,7 +3,7 @@ import { supabase } from '@/shared/lib/supabase'
 import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
-  cancelBooking, createBooking, extendRoom, getBookingStatusSummary, hasOverlappingBooking,
+  cancelBooking, createBooking, extendRoom, shortenRoom, getBookingStatusSummary, hasOverlappingBooking,
   listRoomsForCalendar, listInHouse, listOutstandingBookings, updateRoomStatus,
 } from './api'
 
@@ -213,5 +213,20 @@ describe('extendRoom', () => {
   it('maps an exclusion violation to a friendly overlap message', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { code: '23P01', message: 'exclusion' } } as any)
     await expect(extendRoom('room-1', '2026-01-10')).rejects.toThrow(/already booked for the extended dates/)
+  })
+})
+
+describe('shortenRoom', () => {
+  it('calls shorten_room with the new (earlier) check-out date', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: null } as any)
+    await shortenRoom('room-1', '2026-01-02')
+    expect(mockRpc).toHaveBeenCalledWith('shorten_room', {
+      p_booking_apartment_id: 'room-1', p_new_check_out_date: '2026-01-02',
+    })
+  })
+
+  it('throws when the RPC returns an error', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'must be earlier' } } as any)
+    await expect(shortenRoom('room-1', '2026-01-02')).rejects.toMatchObject({ message: 'must be earlier' })
   })
 })

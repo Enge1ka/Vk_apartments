@@ -497,6 +497,17 @@ export async function extendRoom(roomId: string, newCheckOutDate: string, ratePe
   }
 }
 
+// Shortens a room to an earlier check-out date (early departure). The booking
+// total drops and the balance rolls up; if the guest had overpaid, that shows
+// as a credit to refund. No overlap risk (shrinking a range can't collide).
+export async function shortenRoom(roomId: string, newCheckOutDate: string): Promise<void> {
+  const { error } = await supabase.rpc('shorten_room', {
+    p_booking_apartment_id: roomId,
+    p_new_check_out_date: newCheckOutDate,
+  })
+  if (error) throw error
+}
+
 // Admin-only: cancels every room of a booking at once and releases the rooms.
 export async function cancelBooking(bookingId: string, reason: string, staffEmail?: string | null): Promise<void> {
   const note = `Cancelled on ${todayLocalISO()} by ${staffEmail || 'staff'}: ${reason}`

@@ -39,6 +39,7 @@ SQL_FILES=(
   supabase-auto-checkout.sql
   supabase-multi-apartment.sql
   supabase-extend-stay.sql
+  supabase-refunds-shorten.sql
 )
 
 echo "==> Checking Supabase CLI login..."
