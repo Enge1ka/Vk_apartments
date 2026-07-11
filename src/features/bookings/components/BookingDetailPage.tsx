@@ -16,7 +16,7 @@ import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, Cale
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import type { BookingStatus } from '@/shared/constants/status'
-import { cancelBooking, updateRoomStatus, extendRoom, shortenRoom, editRoom, type BookingRoom } from '../api'
+import { cancelBooking, updateRoomStatus, extendRoom, extendRoomNewRate, shortenRoom, editRoom, type BookingRoom } from '../api'
 import { recordPayment, recordRefund } from '@/features/payments/api'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
@@ -26,6 +26,51 @@ interface ReceiptablePayment {
   receipt_number: string
   payment_date: string
   payment_method: string
+}
+
+// An apartment can hold several contiguous segments (e.g. original nights +
+// an extension at a different rate). Group them so a single guest's stay reads
+// as one apartment with a rate change, not several rooms.
+interface ApartmentGroup {
+  apartmentId: string
+  apartmentNumber: string
+  apartmentType?: string
+  locationName?: string
+  segments: BookingRoom[]
+  latest: BookingRoom
+  groupStatus: BookingStatus
+  total: number
+}
+
+function groupByApartment(rooms: BookingRoom[]): ApartmentGroup[] {
+  const map = new Map<string, BookingRoom[]>()
+  for (const r of rooms) {
+    const arr = map.get(r.apartment_id) ?? []
+    arr.push(r)
+    map.set(r.apartment_id, arr)
+  }
+  const groups: ApartmentGroup[] = []
+  for (const [apartmentId, segs] of map) {
+    segs.sort((a, b) => a.check_in_date.localeCompare(b.check_in_date))
+    const latest = segs.reduce((m, s) => (s.check_out_date > m.check_out_date ? s : m), segs[0])
+    const live = segs.filter(s => s.status !== BOOKING_STATUS.CANCELLED)
+    const groupStatus: BookingStatus =
+      live.length === 0 ? BOOKING_STATUS.CANCELLED
+        : live.some(s => s.status === BOOKING_STATUS.CHECKED_IN) ? BOOKING_STATUS.CHECKED_IN
+          : live.every(s => s.status === BOOKING_STATUS.CHECKED_OUT) ? BOOKING_STATUS.CHECKED_OUT
+            : BOOKING_STATUS.CONFIRMED
+    groups.push({
+      apartmentId,
+      apartmentNumber: segs[0].apartment?.apartment_number ?? '—',
+      apartmentType: segs[0].apartment?.type,
+      locationName: segs[0].apartment?.location?.name ?? undefined,
+      segments: segs,
+      latest,
+      groupStatus,
+      total: segs.reduce((s, x) => s + Number(x.line_total || 0), 0),
+    })
+  }
+  return groups
 }
 
 export default function BookingDetailPage() {
@@ -41,7 +86,7 @@ export default function BookingDetailPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [roomToExtend, setRoomToExtend] = useState<BookingRoom | null>(null)
-  const [extendForm, setExtendForm] = useState({ check_out_date: '', rate_per_day: '' })
+  const [extendForm, setExtendForm] = useState({ check_out_date: '', rate_per_day: '', reprice: false })
   const [roomToShorten, setRoomToShorten] = useState<BookingRoom | null>(null)
   const [shortenDate, setShortenDate] = useState('')
   const [roomToEdit, setRoomToEdit] = useState<BookingRoom | null>(null)
@@ -61,6 +106,7 @@ export default function BookingDetailPage() {
   // doesn't propagate flow narrowing into nested function bodies) — this
   // const has a fixed, already-non-null type instead.
   const booking = rawBooking
+  const apartmentGroups = groupByApartment(booking.rooms)
 
   // The receipt is for the whole booking (one combined payment), so it lists
   // every room with its own dates and rate.
@@ -120,16 +166,20 @@ export default function BookingDetailPage() {
     }
   }
 
-  // Per-room check-in / check-out.
-  async function handleRoomStatus(roomId: string, newStatus: BookingStatus) {
+  // Check-in/out for every relevant segment of an apartment at once (an
+  // apartment may hold more than one contiguous segment after an extension).
+  async function handleGroupStatus(group: ApartmentGroup, newStatus: BookingStatus) {
+    const from = newStatus === BOOKING_STATUS.CHECKED_IN ? BOOKING_STATUS.CONFIRMED : BOOKING_STATUS.CHECKED_IN
+    const targets = group.segments.filter(s => s.status === from)
+    if (targets.length === 0) return
     if (newStatus === BOOKING_STATUS.CHECKED_OUT && booking.outstanding_balance > 0) {
-      const confirmed = window.confirm(`This booking still has an outstanding balance of ${formatCurrency(booking.outstanding_balance)}. Check this room out anyway?`)
+      const confirmed = window.confirm(`This booking still has an outstanding balance of ${formatCurrency(booking.outstanding_balance)}. Check this apartment out anyway?`)
       if (!confirmed) return
     }
     setSaving(true)
     try {
-      await updateRoomStatus(roomId, newStatus)
-      toast.success(newStatus === BOOKING_STATUS.CHECKED_IN ? 'Room checked in' : 'Room checked out')
+      for (const t of targets) await updateRoomStatus(t.id, newStatus)
+      toast.success(newStatus === BOOKING_STATUS.CHECKED_IN ? 'Checked in' : 'Checked out')
       refetch()
     } catch (err) {
       toast.error(getErrorMessage(err))
@@ -138,11 +188,10 @@ export default function BookingDetailPage() {
     }
   }
 
+  // Extend is always applied to the latest segment of the apartment.
   function openExtend(room: BookingRoom) {
     setRoomToExtend(room)
-    // Prefill the rate with the room's current rate (the default); the date is
-    // left blank so staff must pick the new, later check-out.
-    setExtendForm({ check_out_date: '', rate_per_day: String(room.rate_per_day) })
+    setExtendForm({ check_out_date: '', rate_per_day: String(room.rate_per_day), reprice: false })
   }
 
   async function handleExtend() {
@@ -151,11 +200,21 @@ export default function BookingDetailPage() {
     if (extendForm.check_out_date <= roomToExtend.check_out_date) {
       toast.error('New check-out must be later than the current one'); return
     }
-    const rate = extendForm.rate_per_day === '' ? undefined : Number(extendForm.rate_per_day)
-    if (rate !== undefined && (!rate || rate <= 0)) { toast.error('Rate must be greater than 0'); return }
+    const rate = Number(extendForm.rate_per_day)
+    if (!rate || rate <= 0) { toast.error('Rate must be greater than 0'); return }
+    const sameRate = rate === roomToExtend.rate_per_day
     setSaving(true)
     try {
-      await extendRoom(roomToExtend.id, extendForm.check_out_date, rate)
+      if (extendForm.reprice) {
+        // Re-price the whole (latest) room line at the new rate.
+        await extendRoom(roomToExtend.id, extendForm.check_out_date, rate)
+      } else if (sameRate) {
+        // Same rate — just move the check-out on the existing line.
+        await extendRoom(roomToExtend.id, extendForm.check_out_date)
+      } else {
+        // New rate for the extra nights only — add a contiguous segment.
+        await extendRoomNewRate(roomToExtend.id, extendForm.check_out_date, rate)
+      }
       toast.success('Stay extended')
       setRoomToExtend(null)
       refetch()
@@ -306,52 +365,57 @@ export default function BookingDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Rooms ({booking.rooms.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Rooms ({apartmentGroups.length})</CardTitle></CardHeader>
         <CardContent className="pt-0 divide-y divide-gray-50">
-          {booking.rooms.map(room => {
-            const rb = getBadge(BOOKING_STATUS_BADGE, room.status)
+          {apartmentGroups.map(group => {
+            const gb = getBadge(BOOKING_STATUS_BADGE, group.groupStatus)
+            const active = group.groupStatus === BOOKING_STATUS.CONFIRMED || group.groupStatus === BOOKING_STATUS.CHECKED_IN
             return (
-              <div key={room.id} className="py-3 first:pt-0">
+              <div key={group.apartmentId} className="py-3 first:pt-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="text-sm">
-                    <p className="font-semibold text-gray-800">{room.apartment?.apartment_number}{room.apartment?.type ? ` — ${room.apartment.type}` : ''}</p>
-                    <p className="text-gray-500 text-xs">{room.apartment?.location?.name}</p>
-                    <p className="text-gray-400 text-xs mt-0.5">
-                      {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)} · {room.number_of_days} nights · {formatCurrency(room.rate_per_day)}/night
-                    </p>
+                    <p className="font-semibold text-gray-800">{group.apartmentNumber}{group.apartmentType ? ` — ${group.apartmentType}` : ''}</p>
+                    <p className="text-gray-500 text-xs">{group.locationName}</p>
+                    <div className="mt-1 space-y-0.5">
+                      {group.segments.map(seg => (
+                        <p key={seg.id} className="text-gray-400 text-xs">
+                          {formatDate(seg.check_in_date)} → {formatDate(seg.check_out_date)} · {seg.number_of_days}n · {formatCurrency(seg.rate_per_day)}/night
+                          {seg.status === BOOKING_STATUS.CANCELLED && <span className="text-red-400"> · cancelled</span>}
+                        </p>
+                      ))}
+                    </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <Badge variant={rb.variant}>{rb.label}</Badge>
-                    <p className="text-xs font-semibold text-gray-700 mt-1">{formatCurrency(room.line_total)}</p>
+                    <Badge variant={gb.variant}>{gb.label}</Badge>
+                    <p className="text-xs font-semibold text-gray-700 mt-1">{formatCurrency(group.total)}</p>
                   </div>
                 </div>
-                {(room.status === BOOKING_STATUS.CONFIRMED || room.status === BOOKING_STATUS.CHECKED_IN) && (
+                {active && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {room.status === BOOKING_STATUS.CONFIRMED && (
-                      <>
-                        <Button size="sm" variant="outline" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_IN)} disabled={saving}>
-                          <LogIn size={14} /> Check In
-                        </Button>
-                        {/* Not-yet-started room: one Edit covers dates + rate. */}
-                        <Button size="sm" variant="outline" onClick={() => openEdit(room)} disabled={saving}>
-                          <Pencil size={14} /> Edit
-                        </Button>
-                      </>
+                    {group.segments.some(s => s.status === BOOKING_STATUS.CONFIRMED) && (
+                      <Button size="sm" variant="outline" onClick={() => handleGroupStatus(group, BOOKING_STATUS.CHECKED_IN)} disabled={saving}>
+                        <LogIn size={14} /> Check In
+                      </Button>
                     )}
-                    {room.status === BOOKING_STATUS.CHECKED_IN && (
-                      <>
-                        <Button size="sm" variant="outline" onClick={() => handleRoomStatus(room.id, BOOKING_STATUS.CHECKED_OUT)} disabled={saving}>
-                          <LogOut size={14} /> Check Out
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => openExtend(room)} disabled={saving}>
-                          <CalendarPlus size={14} /> Extend
-                        </Button>
-                        {room.number_of_days > 1 && (
-                          <Button size="sm" variant="outline" onClick={() => openShorten(room)} disabled={saving}>
-                            <CalendarMinus size={14} /> Shorten
-                          </Button>
-                        )}
-                      </>
+                    {/* Edit only a not-yet-started, single-segment apartment (dates + rate);
+                        a multi-segment apartment is corrected via extend/shorten instead. */}
+                    {group.groupStatus === BOOKING_STATUS.CONFIRMED && group.segments.length === 1 && (
+                      <Button size="sm" variant="outline" onClick={() => openEdit(group.segments[0])} disabled={saving}>
+                        <Pencil size={14} /> Edit
+                      </Button>
+                    )}
+                    {group.segments.some(s => s.status === BOOKING_STATUS.CHECKED_IN) && (
+                      <Button size="sm" variant="outline" onClick={() => handleGroupStatus(group, BOOKING_STATUS.CHECKED_OUT)} disabled={saving}>
+                        <LogOut size={14} /> Check Out
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => openExtend(group.latest)} disabled={saving}>
+                      <CalendarPlus size={14} /> Extend
+                    </Button>
+                    {group.latest.number_of_days > 1 && (
+                      <Button size="sm" variant="outline" onClick={() => openShorten(group.latest)} disabled={saving}>
+                        <CalendarMinus size={14} /> Shorten
+                      </Button>
                     )}
                   </div>
                 )}
@@ -503,15 +567,23 @@ export default function BookingDetailPage() {
         </DialogHeader>
         <DialogContent className="space-y-3">
           {roomToExtend && (() => {
-            const rate = extendForm.rate_per_day === '' ? roomToExtend.rate_per_day : Number(extendForm.rate_per_day)
-            const nights = extendForm.check_out_date ? calcDays(roomToExtend.check_in_date, extendForm.check_out_date) : 0
-            const newRoomTotal = nights * (rate || 0)
-            const rateChanged = Number(extendForm.rate_per_day) !== roomToExtend.rate_per_day
+            const rate = Number(extendForm.rate_per_day) || 0
+            const rateChanged = extendForm.rate_per_day !== '' && rate !== roomToExtend.rate_per_day
+            const extraNights = extendForm.check_out_date && extendForm.check_out_date > roomToExtend.check_out_date
+              ? calcDays(roomToExtend.check_out_date, extendForm.check_out_date) : 0
+            // Segment mode: original nights untouched, extra nights at the new rate.
+            // Re-price mode: the whole (latest) line is re-priced at the new rate.
+            const segmentMode = rateChanged && !extendForm.reprice
+            const wholeNights = extendForm.check_out_date && extendForm.check_out_date > roomToExtend.check_in_date
+              ? calcDays(roomToExtend.check_in_date, extendForm.check_out_date) : 0
+            const added = segmentMode ? extraNights * rate
+              : extendForm.reprice ? (wholeNights * rate - roomToExtend.line_total)
+              : extraNights * roomToExtend.rate_per_day
             return (
               <>
                 <div className="bg-gray-50 rounded-xl p-3 text-sm">
                   <p className="font-semibold text-gray-800">{roomToExtend.apartment?.apartment_number}</p>
-                  <p className="text-xs text-gray-500">Currently {formatDate(roomToExtend.check_in_date)} → {formatDate(roomToExtend.check_out_date)} · {formatCurrency(roomToExtend.line_total)}</p>
+                  <p className="text-xs text-gray-500">Currently to {formatDate(roomToExtend.check_out_date)} · {formatCurrency(roomToExtend.rate_per_day)}/night</p>
                 </div>
                 <div>
                   <Label htmlFor="extend-date">New Check-out Date</Label>
@@ -522,14 +594,20 @@ export default function BookingDetailPage() {
                   <Label htmlFor="extend-rate">Rate per Night (ZMW)</Label>
                   <Input id="extend-rate" type="number" min="0" step="0.01"
                     value={extendForm.rate_per_day} onChange={e => setExtendForm(f => ({ ...f, rate_per_day: e.target.value }))} />
-                  <p className="text-xs text-gray-400 mt-1">
-                    {rateChanged ? 'Changing the rate re-prices the whole room stay.' : 'Defaults to the current rate.'}
-                  </p>
                 </div>
-                {nights > 0 && (
+                {rateChanged && (
+                  <label className="flex items-start gap-2 text-xs text-gray-600">
+                    <input type="checkbox" className="mt-0.5" checked={extendForm.reprice} onChange={e => setExtendForm(f => ({ ...f, reprice: e.target.checked }))} />
+                    <span>Re-price the whole stay at this rate. Leave unticked to keep the original nights at {formatCurrency(roomToExtend.rate_per_day)} and bill only the extra nights at {formatCurrency(rate)}.</span>
+                  </label>
+                )}
+                {extraNights > 0 && (
                   <div className="bg-blue-50 rounded-xl p-3 text-sm text-blue-700">
-                    New room total: <strong>{formatCurrency(newRoomTotal)}</strong> ({nights} nights)
-                    {newRoomTotal > roomToExtend.line_total && <> · <span className="font-medium">+{formatCurrency(newRoomTotal - roomToExtend.line_total)}</span> added to the balance</>}
+                    {segmentMode
+                      ? <>Extra {extraNights} night{extraNights > 1 ? 's' : ''} @ {formatCurrency(rate)} · <span className="font-medium">+{formatCurrency(added)}</span> to the balance</>
+                      : extendForm.reprice
+                        ? <>Whole room re-priced to <strong>{formatCurrency(wholeNights * rate)}</strong> ({wholeNights} nights) · <span className="font-medium">{added >= 0 ? '+' : ''}{formatCurrency(added)}</span></>
+                        : <>Extra {extraNights} night{extraNights > 1 ? 's' : ''} · <span className="font-medium">+{formatCurrency(added)}</span> to the balance</>}
                   </div>
                 )}
               </>

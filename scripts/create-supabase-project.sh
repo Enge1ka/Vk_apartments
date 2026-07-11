@@ -44,6 +44,7 @@ SQL_FILES=(
   supabase-refunds-shorten.sql
   supabase-edit-room.sql
   supabase-audit-log.sql
+  supabase-extend-segment.sql
 )
 
 echo "==> Checking Supabase CLI login..."
