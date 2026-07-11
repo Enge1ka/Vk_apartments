@@ -6,7 +6,7 @@ import { Input } from '@/shared/ui/Input'
 import { Label } from '@/shared/ui/Label'
 import { Select } from '@/shared/ui/Select'
 import { Card, CardContent } from '@/shared/ui/Card'
-import { formatCurrency, calcDays, calcTotal, todayLocalISO } from '@/shared/lib/bookingUtils'
+import { formatCurrency, calcDays, calcTotal, todayLocalISO, perNightForMode, eligibleRateModes, type RateMode } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt } from '@/shared/lib/receiptLazy'
 import { ChevronLeft, ChevronRight, Check, Plus, Trash2, Search } from 'lucide-react'
@@ -116,6 +116,14 @@ export default function NewBookingPage() {
     setDraft(d => ({ ...d, apartment_id: apartmentId, rate_per_day: apt ? String(apt.daily_rate) : '' }))
   }
 
+  // Picking Daily/Weekly/Monthly just rewrites the per-night rate; the total
+  // and everything downstream stay driven by rate_per_day × nights.
+  function selectRateMode(mode: RateMode) {
+    const apt = apartments.find(a => a.id === draft.apartment_id)
+    if (!apt) return
+    setDraft(d => ({ ...d, rate_per_day: String(perNightForMode(apt, mode)) }))
+  }
+
   const datesReady = !!draft.check_in_date && !!draft.check_out_date && draft.check_out_date > draft.check_in_date
   const currentRange = datesReady ? `${locationIdSel}|${draft.check_in_date}|${draft.check_out_date}` : null
   // True whenever the requested range hasn't been fetched yet — including the
@@ -127,6 +135,13 @@ export default function NewBookingPage() {
   const availableApartments = (datesReady && !checkingAvailability)
     ? apartments.filter(a => !rooms.some(r => r.apartment_id === a.id))
     : []
+
+  // Weekly/monthly discount options for the room being drafted — only the tiers
+  // that make sense for its length of stay and that this apartment has a rate
+  // for. Shown as a chooser only when there's more than just "daily".
+  const draftNights = calcDays(draft.check_in_date, draft.check_out_date)
+  const draftApt = apartments.find(a => a.id === draft.apartment_id)
+  const rateModes = draftApt ? eligibleRateModes(draftApt, draftNights) : []
 
   function clientField(key: keyof ClientState) {
     return {
@@ -438,6 +453,32 @@ export default function NewBookingPage() {
                     <p className="text-xs text-red-500 mt-1">No apartments free at this location for those dates.</p>
                   )}
                 </div>
+                {draft.apartment_id && draftApt && rateModes.length > 1 && (
+                  <div>
+                    <Label>Rate</Label>
+                    <div className="grid gap-2">
+                      {rateModes.map(mode => {
+                        const perNight = perNightForMode(draftApt, mode)
+                        const active = Math.abs(Number(draft.rate_per_day) - perNight) < 0.005
+                        const meta = rateModeMeta(draftApt, mode)
+                        return (
+                          <button key={mode} type="button" onClick={() => selectRateMode(mode)}
+                            className={`flex items-center justify-between rounded-xl border p-3 text-sm text-left transition-colors ${active ? 'border-[#1e3a5f] bg-[#1e3a5f]/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                            <span>
+                              <span className="font-semibold text-gray-800">{meta.label}</span>
+                              <span className="text-gray-400"> · {meta.from}</span>
+                            </span>
+                            <span className="text-right">
+                              <span className="block font-semibold text-gray-900">{formatCurrency(calcTotal(draftNights, perNight))}</span>
+                              <span className="block text-xs text-gray-500">{formatCurrency(perNight)}/night</span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">Longer-stay discount — pick a rate, or type your own below.</p>
+                  </div>
+                )}
                 {draft.apartment_id && (
                   <div>
                     <Label htmlFor="nb-rate">Rate per Day (ZMW)</Label>
@@ -526,6 +567,13 @@ export default function NewBookingPage() {
       </div>
     </div>
   )
+}
+
+// Label + "from" hint for a rate tier button, e.g. Weekly · from K7,000/week.
+function rateModeMeta(apt: Apartment, mode: RateMode): { label: string; from: string } {
+  if (mode === 'weekly') return { label: 'Weekly', from: `from ${formatCurrency(apt.weekly_rate)}/week` }
+  if (mode === 'monthly') return { label: 'Monthly', from: `from ${formatCurrency(apt.monthly_rate)}/month` }
+  return { label: 'Daily', from: `${formatCurrency(apt.daily_rate)}/night` }
 }
 
 function Row({ label, value, bold }: { label: string; value?: string | number | null; bold?: boolean }) {
