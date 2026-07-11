@@ -444,6 +444,44 @@ export async function listRoomsForCalendar(locationId: string | null): Promise<C
   }))
 }
 
+// A room occupying an apartment within a date window, for the availability
+// grid. Non-cancelled rooms whose stay overlaps [fromDate, toDate).
+export interface RoomOccupancy {
+  apartment_id: string
+  booking_id: string
+  check_in_date: string
+  check_out_date: string
+  client_name: string | null
+}
+
+export async function listRoomOccupancy(locationId: string | null, fromDate: string, toDate: string): Promise<RoomOccupancy[]> {
+  let aptIds: string[] | null = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase
+    .from('booking_apartments')
+    .select('apartment_id, booking_id, check_in_date, check_out_date, booking:bookings(client:clients(full_name))')
+    .neq('status', BOOKING_STATUS.CANCELLED)
+    .lt('check_in_date', toDate)
+    .gt('check_out_date', fromDate)
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((r: any) => ({
+    apartment_id: r.apartment_id,
+    booking_id: r.booking_id,
+    check_in_date: r.check_in_date,
+    check_out_date: r.check_out_date,
+    client_name: r.booking?.client?.full_name ?? null,
+  }))
+}
+
 export async function getBooking(id: string): Promise<Booking> {
   const { data, error } = await supabase.from('bookings').select(DETAIL_SELECT).eq('id', id).single()
   if (error) throw error
@@ -556,6 +594,23 @@ export async function shortenRoom(roomId: string, newCheckOutDate: string): Prom
     p_new_check_out_date: newCheckOutDate,
   })
   if (error) throw error
+}
+
+// Corrects a not-yet-checked-in room's dates and rate (fix a mistake without
+// cancel + rebook). Confirmed rooms only — the RPC enforces that.
+export async function editRoom(roomId: string, checkInDate: string, checkOutDate: string, ratePerDay: number): Promise<void> {
+  const { error } = await supabase.rpc('edit_room', {
+    p_booking_apartment_id: roomId,
+    p_check_in_date: checkInDate,
+    p_check_out_date: checkOutDate,
+    p_rate_per_day: ratePerDay,
+  })
+  if (error) {
+    if (error.code === EXCLUSION_VIOLATION) {
+      throw new Error('That apartment is already booked for those dates. Choose different dates.')
+    }
+    throw error
+  }
 }
 
 // Admin-only: cancels every room of a booking at once and releases the rooms.

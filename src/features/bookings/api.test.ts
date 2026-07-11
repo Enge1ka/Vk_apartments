@@ -3,8 +3,8 @@ import { supabase } from '@/shared/lib/supabase'
 import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
-  cancelBooking, createBooking, extendRoom, shortenRoom, getBookingStatusSummary, hasOverlappingBooking,
-  listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, updateRoomStatus,
+  cancelBooking, createBooking, extendRoom, shortenRoom, editRoom, getBookingStatusSummary, hasOverlappingBooking,
+  listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, listRoomOccupancy, updateRoomStatus,
 } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
@@ -138,6 +138,33 @@ describe('listOverdueRooms', () => {
   })
 })
 
+describe('listRoomOccupancy', () => {
+  it('queries non-cancelled rooms overlapping the window and flattens the client', async () => {
+    const chain = {
+      select: () => chain,
+      neq: vi.fn(() => chain),
+      lt: vi.fn(() => chain),
+      gt: vi.fn(() => Promise.resolve({
+        data: [{ apartment_id: 'apt-1', booking_id: 'b1', check_in_date: '2026-07-13', check_out_date: '2026-07-15', booking: { client: { full_name: 'Jane' } } }],
+        error: null,
+      })),
+    }
+    mockFrom.mockReturnValue(chain as any)
+
+    const result = await listRoomOccupancy(null, '2026-07-10', '2026-07-24')
+    expect(chain.neq).toHaveBeenCalledWith('status', 'cancelled')
+    expect(chain.lt).toHaveBeenCalledWith('check_in_date', '2026-07-24')
+    expect(chain.gt).toHaveBeenCalledWith('check_out_date', '2026-07-10')
+    expect(result[0]).toEqual({ apartment_id: 'apt-1', booking_id: 'b1', check_in_date: '2026-07-13', check_out_date: '2026-07-15', client_name: 'Jane' })
+  })
+
+  it('short-circuits when the location has no apartments', async () => {
+    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
+    await expect(listRoomOccupancy('loc-1', '2026-07-10', '2026-07-24')).resolves.toEqual([])
+    expect(mockFrom).not.toHaveBeenCalled()
+  })
+})
+
 describe('listOutstandingBookings', () => {
   it('filters to a positive outstanding balance, excludes cancelled, orders descending', async () => {
     const chain = {
@@ -261,5 +288,20 @@ describe('shortenRoom', () => {
   it('throws when the RPC returns an error', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'must be earlier' } } as any)
     await expect(shortenRoom('room-1', '2026-01-02')).rejects.toMatchObject({ message: 'must be earlier' })
+  })
+})
+
+describe('editRoom', () => {
+  it('calls edit_room with the corrected dates and rate', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: null } as any)
+    await editRoom('room-1', '2026-02-01', '2026-02-04', 1800)
+    expect(mockRpc).toHaveBeenCalledWith('edit_room', {
+      p_booking_apartment_id: 'room-1', p_check_in_date: '2026-02-01', p_check_out_date: '2026-02-04', p_rate_per_day: 1800,
+    })
+  })
+
+  it('maps an exclusion violation to a friendly overlap message', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { code: '23P01', message: 'exclusion' } } as any)
+    await expect(editRoom('room-1', '2026-02-01', '2026-02-04', 1800)).rejects.toThrow(/already booked for those dates/)
   })
 })
