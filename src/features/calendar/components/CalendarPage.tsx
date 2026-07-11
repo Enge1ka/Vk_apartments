@@ -11,6 +11,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { listLocations } from '@/features/locations/api'
 import { listRoomsForCalendar, subscribeToBookingChanges } from '@/features/bookings/api'
+import AvailabilityGrid from './AvailabilityGrid'
 
 const LOCATION_COLORS = ['#1e3a5f', '#2d8a4e', '#b45309', '#7c3aed']
 
@@ -26,6 +27,7 @@ export default function CalendarPage() {
   const navigate = useNavigate()
   const { isRestricted, locationId } = useAuth()
   const [filterLocation, setFilterLocation] = useState('')
+  const [view, setView] = useState<'calendar' | 'grid'>('calendar')
 
   // Restricted users are locked to their assigned location.
   const effectiveLocation = isRestricted && locationId ? locationId : filterLocation
@@ -78,33 +80,51 @@ export default function CalendarPage() {
 
       {error && <ErrorBanner error={error} />}
 
-      <div className="flex flex-wrap gap-2">
-        {locations.map((loc, i) => (
-          <div key={loc.id} className="flex items-center gap-1.5 text-xs text-gray-600">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getLocationColor(i) }} />
-            {loc.name}
-          </div>
+      <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+        {(['calendar', 'grid'] as const).map(v => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${view === v ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          >
+            {v === 'calendar' ? 'Calendar' : 'Availability grid'}
+          </button>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-        <FullCalendar
-          plugins={[dayGridPlugin, interactionPlugin]}
-          initialView="dayGridMonth"
-          events={events}
-          eventClick={handleEventClick}
-          headerToolbar={{
-            left: 'prev',
-            center: 'title',
-            right: 'next today',
-          }}
-          height="auto"
-          eventDisplay="block"
-          dayMaxEvents={3}
-          eventTextColor="#fff"
-          eventClassNames="text-xs cursor-pointer"
-        />
-      </div>
+      {view === 'grid' ? (
+        <AvailabilityGrid locationId={effectiveLocation || null} />
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {locations.map((loc, i) => (
+              <div key={loc.id} className="flex items-center gap-1.5 text-xs text-gray-600">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getLocationColor(i) }} />
+                {loc.name}
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+            <FullCalendar
+              plugins={[dayGridPlugin, interactionPlugin]}
+              initialView="dayGridMonth"
+              events={events}
+              eventClick={handleEventClick}
+              headerToolbar={{
+                left: 'prev',
+                center: 'title',
+                right: 'next today',
+              }}
+              height="auto"
+              eventDisplay="block"
+              dayMaxEvents={3}
+              eventTextColor="#fff"
+              eventClassNames="text-xs cursor-pointer"
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }
