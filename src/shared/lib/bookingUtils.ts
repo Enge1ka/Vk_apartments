@@ -12,6 +12,49 @@ export function calcTotal(days: number, ratePerDay: number): number {
   return days * ratePerDay
 }
 
+export type RateMode = 'daily' | 'weekly' | 'monthly'
+
+// A stay must reach these lengths before the weekly / monthly rate is offered
+// as a discount option on the booking screen.
+export const WEEKLY_MIN_NIGHTS = 7
+export const MONTHLY_MIN_NIGHTS = 28
+
+// Just the rate fields we need off an apartment — kept local so this stays a
+// pure pricing helper independent of the apartments feature's Apartment type.
+export interface PeriodRates {
+  daily_rate: number
+  weekly_rate?: number | null
+  monthly_rate?: number | null
+}
+
+// The per-night price a billing mode works out to. Weekly and monthly rates are
+// flat period prices spread evenly across the period (÷7, ÷30) so any stay
+// length gets a smooth discount rather than odd whole-block jumps. Rounded to
+// whole ngwee because rate_per_day is stored as numeric(10,2); the line total is
+// then nights × this rounded rate, so a period that isn't an exact multiple can
+// land a few ngwee off the round figure — which the booking screen shows before
+// you confirm. Falls back to the daily rate if the chosen period rate is unset.
+export function perNightForMode(apt: PeriodRates, mode: RateMode): number {
+  if (mode === 'weekly' && apt.weekly_rate && apt.weekly_rate > 0) {
+    return Math.round((apt.weekly_rate / 7) * 100) / 100
+  }
+  if (mode === 'monthly' && apt.monthly_rate && apt.monthly_rate > 0) {
+    return Math.round((apt.monthly_rate / 30) * 100) / 100
+  }
+  return apt.daily_rate
+}
+
+// Which billing modes make sense for a stay of `nights` nights: always daily;
+// weekly once the stay is at least a week and a weekly rate is set; monthly once
+// it's about a month and a monthly rate is set. Longer stays offer every tier so
+// staff can pick (a month-long stay can still be quoted at the weekly rate).
+export function eligibleRateModes(apt: PeriodRates, nights: number): RateMode[] {
+  const modes: RateMode[] = ['daily']
+  if (nights >= WEEKLY_MIN_NIGHTS && apt.weekly_rate && apt.weekly_rate > 0) modes.push('weekly')
+  if (nights >= MONTHLY_MIN_NIGHTS && apt.monthly_rate && apt.monthly_rate > 0) modes.push('monthly')
+  return modes
+}
+
 // Formats a Date as yyyy-MM-dd from its *local* date parts. Every calendar
 // date sent to or compared against the database must go through this (or
 // todayLocalISO) — `toISOString().split('T')[0]` converts to UTC first, which

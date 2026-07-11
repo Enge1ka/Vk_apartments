@@ -7,7 +7,11 @@ import {
   generateBookingRef,
   generateReceiptNumber,
   getPaymentStatus,
+  perNightForMode,
+  eligibleRateModes,
 } from './bookingUtils'
+
+const APT = { daily_rate: 1200, weekly_rate: 7000, monthly_rate: 25000 }
 
 describe('calcDays', () => {
   it('returns the number of nights between two dates', () => {
@@ -69,5 +73,58 @@ describe('getPaymentStatus', () => {
     expect(getPaymentStatus(1000, 500)).toBe('partial')
     expect(getPaymentStatus(1000, 1000)).toBe('paid')
     expect(getPaymentStatus(1000, 1200)).toBe('paid')
+  })
+})
+
+describe('perNightForMode', () => {
+  it('returns the plain daily rate for daily', () => {
+    expect(perNightForMode(APT, 'daily')).toBe(1200)
+  })
+
+  it('spreads the weekly rate over 7 nights', () => {
+    expect(perNightForMode(APT, 'weekly')).toBe(1000) // 7000 / 7
+  })
+
+  it('spreads the monthly rate over 30 nights, rounded to the ngwee', () => {
+    expect(perNightForMode(APT, 'monthly')).toBe(833.33) // 25000 / 30 = 833.333…
+  })
+
+  it('falls back to the daily rate when the period rate is unset or zero', () => {
+    expect(perNightForMode({ daily_rate: 1200, weekly_rate: null, monthly_rate: null }, 'weekly')).toBe(1200)
+    expect(perNightForMode({ daily_rate: 1200, weekly_rate: 0, monthly_rate: 0 }, 'monthly')).toBe(1200)
+  })
+})
+
+describe('eligibleRateModes', () => {
+  it('offers only daily for a stay shorter than a week', () => {
+    expect(eligibleRateModes(APT, 6)).toEqual(['daily'])
+  })
+
+  it('adds weekly once the stay reaches a week', () => {
+    expect(eligibleRateModes(APT, 7)).toEqual(['daily', 'weekly'])
+    expect(eligibleRateModes(APT, 20)).toEqual(['daily', 'weekly'])
+  })
+
+  it('adds monthly once the stay reaches about a month, keeping weekly too', () => {
+    expect(eligibleRateModes(APT, 28)).toEqual(['daily', 'weekly', 'monthly'])
+    expect(eligibleRateModes(APT, 45)).toEqual(['daily', 'weekly', 'monthly'])
+  })
+
+  it('only offers a tier the apartment has a rate for', () => {
+    const noPeriods = { daily_rate: 1200, weekly_rate: null, monthly_rate: null }
+    expect(eligibleRateModes(noPeriods, 40)).toEqual(['daily'])
+    const weeklyOnly = { daily_rate: 1200, weekly_rate: 7000, monthly_rate: null }
+    expect(eligibleRateModes(weeklyOnly, 40)).toEqual(['daily', 'weekly'])
+  })
+})
+
+describe('period pricing end to end', () => {
+  it('a 30-night stay on the monthly rate lands within a ngwee of the flat figure', () => {
+    const total = calcTotal(30, perNightForMode(APT, 'monthly'))
+    expect(Math.abs(total - 25000)).toBeLessThanOrEqual(0.1) // 30 × 833.33 = 24999.90
+  })
+
+  it('an exact-week stay on the weekly rate matches the flat weekly figure', () => {
+    expect(calcTotal(7, perNightForMode(APT, 'weekly'))).toBe(7000)
   })
 })
