@@ -12,11 +12,11 @@ import { formatCurrency, formatDate, todayLocalISO, calcDays } from '@/shared/li
 import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt, shareReceiptWhatsApp } from '@/shared/lib/receiptLazy'
 import type { ReceiptData } from '@/shared/lib/receiptGenerator'
-import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus, CalendarMinus, Undo2 } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus, CalendarMinus, Undo2, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import type { BookingStatus } from '@/shared/constants/status'
-import { cancelBooking, updateRoomStatus, extendRoom, extendRoomNewRate, shortenRoom, type BookingRoom } from '../api'
+import { cancelBooking, updateRoomStatus, extendRoom, extendRoomNewRate, shortenRoom, editRoom, type BookingRoom } from '../api'
 import { recordPayment, recordRefund } from '@/features/payments/api'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
@@ -89,6 +89,8 @@ export default function BookingDetailPage() {
   const [extendForm, setExtendForm] = useState({ check_out_date: '', rate_per_day: '', reprice: false })
   const [roomToShorten, setRoomToShorten] = useState<BookingRoom | null>(null)
   const [shortenDate, setShortenDate] = useState('')
+  const [roomToEdit, setRoomToEdit] = useState<BookingRoom | null>(null)
+  const [editForm, setEditForm] = useState({ check_in_date: '', check_out_date: '', rate_per_day: '' })
   const [refundDialog, setRefundDialog] = useState(false)
   const [refundForm, setRefundForm] = useState({ amount: '', payment_method: 'cash', reason: '' })
   const [refundError, setRefundError] = useState<string | null>(null)
@@ -246,6 +248,35 @@ export default function BookingDetailPage() {
     }
   }
 
+  function openEdit(room: BookingRoom) {
+    setRoomToEdit(room)
+    setEditForm({
+      check_in_date: room.check_in_date,
+      check_out_date: room.check_out_date,
+      rate_per_day: String(room.rate_per_day),
+    })
+  }
+
+  async function handleEdit() {
+    if (!roomToEdit) return
+    const { check_in_date, check_out_date, rate_per_day } = editForm
+    if (!check_in_date || !check_out_date) { toast.error('Enter check-in and check-out dates'); return }
+    if (check_out_date <= check_in_date) { toast.error('Check-out must be after check-in'); return }
+    const rate = Number(rate_per_day)
+    if (!rate || rate <= 0) { toast.error('Rate must be greater than 0'); return }
+    setSaving(true)
+    try {
+      await editRoom(roomToEdit.id, check_in_date, check_out_date, rate)
+      toast.success('Room updated')
+      setRoomToEdit(null)
+      refetch()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleRecordRefund() {
     const amt = Number(refundForm.amount)
     if (!amt || amt <= 0) { setRefundError('Enter a valid amount'); return }
@@ -364,6 +395,13 @@ export default function BookingDetailPage() {
                     {group.segments.some(s => s.status === BOOKING_STATUS.CONFIRMED) && (
                       <Button size="sm" variant="outline" onClick={() => handleGroupStatus(group, BOOKING_STATUS.CHECKED_IN)} disabled={saving}>
                         <LogIn size={14} /> Check In
+                      </Button>
+                    )}
+                    {/* Edit only a not-yet-started, single-segment apartment (dates + rate);
+                        a multi-segment apartment is corrected via extend/shorten instead. */}
+                    {group.groupStatus === BOOKING_STATUS.CONFIRMED && group.segments.length === 1 && (
+                      <Button size="sm" variant="outline" onClick={() => openEdit(group.segments[0])} disabled={saving}>
+                        <Pencil size={14} /> Edit
                       </Button>
                     )}
                     {group.segments.some(s => s.status === BOOKING_STATUS.CHECKED_IN) && (
@@ -619,6 +657,52 @@ export default function BookingDetailPage() {
           <Button variant="outline" className="flex-1" onClick={() => setRoomToShorten(null)}>Cancel</Button>
           <Button className="flex-1" onClick={handleShorten} disabled={saving}>
             {saving ? 'Saving…' : 'Shorten Stay'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog open={!!roomToEdit} onClose={() => setRoomToEdit(null)}>
+        <DialogHeader onClose={() => setRoomToEdit(null)}>
+          <DialogTitle>Edit Room</DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-3">
+          {roomToEdit && (() => {
+            const nights = editForm.check_in_date && editForm.check_out_date && editForm.check_out_date > editForm.check_in_date
+              ? calcDays(editForm.check_in_date, editForm.check_out_date) : 0
+            const newTotal = nights * (Number(editForm.rate_per_day) || 0)
+            return (
+              <>
+                <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                  <p className="font-semibold text-gray-800">{roomToEdit.apartment?.apartment_number}</p>
+                  <p className="text-xs text-gray-500">Fix a mistake before check-in — dates and rate.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="edit-checkin">Check-in</Label>
+                    <Input id="edit-checkin" type="date" value={editForm.check_in_date} onChange={e => setEditForm(f => ({ ...f, check_in_date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-checkout">Check-out</Label>
+                    <Input id="edit-checkout" type="date" value={editForm.check_out_date} onChange={e => setEditForm(f => ({ ...f, check_out_date: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit-rate">Rate per Night (ZMW)</Label>
+                  <Input id="edit-rate" type="number" min="0" step="0.01" value={editForm.rate_per_day} onChange={e => setEditForm(f => ({ ...f, rate_per_day: e.target.value }))} />
+                </div>
+                {nights > 0 && (
+                  <div className="bg-blue-50 rounded-xl p-3 text-sm text-blue-700">
+                    New room total: <strong>{formatCurrency(newTotal)}</strong> ({nights} nights)
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" className="flex-1" onClick={() => setRoomToEdit(null)}>Cancel</Button>
+          <Button className="flex-1" onClick={handleEdit} disabled={saving}>
+            {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         </DialogFooter>
       </Dialog>

@@ -42,6 +42,8 @@ Booking, apartment, payment, calendar, client, and reporting management for VK L
    - `supabase-payment-status-rollup-fix.sql` — fixes `refresh_booking_rollup()` (used by `extend_room`, `cancel_booking`, and others) to also recompute `payment_status`, not just `total_amount`. Without this, extending a fully-paid booking left it showing "PAID" while actually owing money again.
    - `supabase-metrics-purge.sql` — adds `purge_old_performance_metrics()` and a monthly `pg_cron` job that deletes `performance_metrics` rows older than 90 days, so telemetry doesn't grow unbounded.
    - `supabase-refunds-shorten.sql` — adds a `payment_type` column, `record_refund()` (admin-only; records money returned to a guest and settles a negative balance), and `shorten_room()` (move a room's check-out earlier for an early departure).
+   - `supabase-edit-room.sql` — adds `edit_room()`, which corrects a not-yet-checked-in room's check-in date, check-out date, and rate in one step (fix a mistake without cancel + rebook).
+   - `supabase-audit-log.sql` — adds an `audit_log` table and triggers that record who did what (booking created, check-in/out, extend/shorten/edit, cancel, payments/refunds). Admin-only read; surfaced under **Settings → Audit Log**.
    - `supabase-extend-segment.sql` — adds `extend_room_new_rate()`, which extends a stay by adding a contiguous room segment at a new rate (keeps the original nights at their original price instead of re-pricing the whole room).
 
    See [docs/database.md](docs/database.md) for the full schema reference.

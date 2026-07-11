@@ -10,10 +10,11 @@ import { Label } from '@/shared/ui/Label'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '@/shared/ui/Dialog'
 import { Badge } from '@/shared/ui/Badge'
 import { Select } from '@/shared/ui/Select'
-import { Plus, MapPin, ClipboardList } from 'lucide-react'
+import { Plus, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import PerformanceTab from '@/features/monitoring/components/PerformanceTab'
+import AuditLogTab from '@/features/audit/components/AuditLogTab'
 import { useAuth } from '@/features/auth/useAuth'
 
 const TABS = ['Users', 'Locations', 'Audit Log', 'Performance']
@@ -163,14 +164,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {tab === 'Audit Log' && (
-        <Card>
-          <CardContent className="p-6 text-center">
-            <ClipboardList size={36} className="text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">Audit log requires a custom Supabase trigger to populate.</p>
-          </CardContent>
-        </Card>
-      )}
+      {tab === 'Audit Log' && <AuditLogTab />}
 
       {tab === 'Performance' && <PerformanceTab />}
 

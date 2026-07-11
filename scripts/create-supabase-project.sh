@@ -42,6 +42,8 @@ SQL_FILES=(
   supabase-payment-status-rollup-fix.sql
   supabase-metrics-purge.sql
   supabase-refunds-shorten.sql
+  supabase-edit-room.sql
+  supabase-audit-log.sql
   supabase-extend-segment.sql
 )
 
