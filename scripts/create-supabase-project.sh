@@ -43,6 +43,7 @@ SQL_FILES=(
   supabase-metrics-purge.sql
   supabase-refunds-shorten.sql
   supabase-edit-room.sql
+  supabase-audit-log.sql
 )
 
 echo "==> Checking Supabase CLI login..."
