@@ -4,7 +4,7 @@ import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
   cancelBooking, createBooking, extendRoom, shortenRoom, getBookingStatusSummary, hasOverlappingBooking,
-  listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, updateRoomStatus,
+  listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, listRoomOccupancy, updateRoomStatus,
 } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
@@ -134,6 +134,33 @@ describe('listOverdueRooms', () => {
   it('short-circuits when the location has no apartments', async () => {
     vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
     await expect(listOverdueRooms('loc-1')).resolves.toEqual([])
+    expect(mockFrom).not.toHaveBeenCalled()
+  })
+})
+
+describe('listRoomOccupancy', () => {
+  it('queries non-cancelled rooms overlapping the window and flattens the client', async () => {
+    const chain = {
+      select: () => chain,
+      neq: vi.fn(() => chain),
+      lt: vi.fn(() => chain),
+      gt: vi.fn(() => Promise.resolve({
+        data: [{ apartment_id: 'apt-1', booking_id: 'b1', check_in_date: '2026-07-13', check_out_date: '2026-07-15', booking: { client: { full_name: 'Jane' } } }],
+        error: null,
+      })),
+    }
+    mockFrom.mockReturnValue(chain as any)
+
+    const result = await listRoomOccupancy(null, '2026-07-10', '2026-07-24')
+    expect(chain.neq).toHaveBeenCalledWith('status', 'cancelled')
+    expect(chain.lt).toHaveBeenCalledWith('check_in_date', '2026-07-24')
+    expect(chain.gt).toHaveBeenCalledWith('check_out_date', '2026-07-10')
+    expect(result[0]).toEqual({ apartment_id: 'apt-1', booking_id: 'b1', check_in_date: '2026-07-13', check_out_date: '2026-07-15', client_name: 'Jane' })
+  })
+
+  it('short-circuits when the location has no apartments', async () => {
+    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
+    await expect(listRoomOccupancy('loc-1', '2026-07-10', '2026-07-24')).resolves.toEqual([])
     expect(mockFrom).not.toHaveBeenCalled()
   })
 })

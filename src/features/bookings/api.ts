@@ -444,6 +444,44 @@ export async function listRoomsForCalendar(locationId: string | null): Promise<C
   }))
 }
 
+// A room occupying an apartment within a date window, for the availability
+// grid. Non-cancelled rooms whose stay overlaps [fromDate, toDate).
+export interface RoomOccupancy {
+  apartment_id: string
+  booking_id: string
+  check_in_date: string
+  check_out_date: string
+  client_name: string | null
+}
+
+export async function listRoomOccupancy(locationId: string | null, fromDate: string, toDate: string): Promise<RoomOccupancy[]> {
+  let aptIds: string[] | null = null
+  if (locationId) {
+    aptIds = await listApartmentIds(locationId)
+    if (aptIds.length === 0) return []
+  }
+
+  let query = supabase
+    .from('booking_apartments')
+    .select('apartment_id, booking_id, check_in_date, check_out_date, booking:bookings(client:clients(full_name))')
+    .neq('status', BOOKING_STATUS.CANCELLED)
+    .lt('check_in_date', toDate)
+    .gt('check_out_date', fromDate)
+  if (aptIds) query = query.in('apartment_id', aptIds)
+
+  const { data, error } = await query
+  if (error) throw error
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((r: any) => ({
+    apartment_id: r.apartment_id,
+    booking_id: r.booking_id,
+    check_in_date: r.check_in_date,
+    check_out_date: r.check_out_date,
+    client_name: r.booking?.client?.full_name ?? null,
+  }))
+}
+
 export async function getBooking(id: string): Promise<Booking> {
   const { data, error } = await supabase.from('bookings').select(DETAIL_SELECT).eq('id', id).single()
   if (error) throw error
