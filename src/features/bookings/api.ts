@@ -547,6 +547,24 @@ export async function extendRoom(roomId: string, newCheckOutDate: string, ratePe
   }
 }
 
+// Extends a room by adding a contiguous segment at a NEW rate, keeping the
+// original nights at their original price (vs extendRoom, which re-prices the
+// whole stay). Creates a second row on the same apartment starting where the
+// current stay ends.
+export async function extendRoomNewRate(roomId: string, newCheckOutDate: string, ratePerDay: number): Promise<void> {
+  const { error } = await supabase.rpc('extend_room_new_rate', {
+    p_booking_apartment_id: roomId,
+    p_new_check_out_date: newCheckOutDate,
+    p_rate_per_day: ratePerDay,
+  })
+  if (error) {
+    if (error.code === EXCLUSION_VIOLATION) {
+      throw new Error('That apartment is already booked for the extended dates. Choose an earlier date or free the other booking.')
+    }
+    throw error
+  }
+}
+
 // Shortens a room to an earlier check-out date (early departure). The booking
 // total drops and the balance rolls up; if the guest had overpaid, that shows
 // as a credit to refund. No overlap risk (shrinking a range can't collide).

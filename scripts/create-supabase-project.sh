@@ -42,6 +42,7 @@ SQL_FILES=(
   supabase-payment-status-rollup-fix.sql
   supabase-metrics-purge.sql
   supabase-refunds-shorten.sql
+  supabase-extend-segment.sql
 )
 
 echo "==> Checking Supabase CLI login..."
