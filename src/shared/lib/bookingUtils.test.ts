@@ -43,12 +43,17 @@ describe('calcTotal', () => {
 })
 
 describe('formatCurrency', () => {
-  it('formats a number as ZMW currency', () => {
-    expect(formatCurrency(1500)).toContain('1,500.00')
+  it('formats a whole amount without decimals (whole-kwacha policy)', () => {
+    expect(formatCurrency(1500)).toContain('1,500')
+    expect(formatCurrency(1500)).not.toContain('.00')
+  })
+
+  it('keeps ngwee on historical fractional amounts', () => {
+    expect(formatCurrency(1500.5)).toContain('1,500.50')
   })
 
   it('treats a missing amount as zero', () => {
-    expect(formatCurrency(undefined)).toContain('0.00')
+    expect(formatCurrency(undefined)).toContain('0')
   })
 })
 
@@ -92,8 +97,12 @@ describe('perNightForMode', () => {
     expect(perNightForMode(APT, 'weekly')).toBe(1000) // 7000 / 7
   })
 
-  it('spreads the monthly rate over 30 nights, rounded to the ngwee', () => {
-    expect(perNightForMode(APT, 'monthly')).toBe(833.33) // 25000 / 30 = 833.333…
+  it('spreads the monthly rate over 30 nights, rounded to whole kwacha', () => {
+    expect(perNightForMode(APT, 'monthly')).toBe(833) // 25000 / 30 = 833.33… → 833
+  })
+
+  it('rounds a legacy decimal daily rate to whole kwacha', () => {
+    expect(perNightForMode({ daily_rate: 1799.99, weekly_rate: null, monthly_rate: null }, 'daily')).toBe(1800)
   })
 
   it('falls back to the daily rate when the period rate is unset or zero', () => {
@@ -126,9 +135,10 @@ describe('eligibleRateModes', () => {
 })
 
 describe('period pricing end to end', () => {
-  it('a 30-night stay on the monthly rate lands within a ngwee of the flat figure', () => {
+  it('a 30-night stay on the monthly rate lands whole and near the flat figure', () => {
     const total = calcTotal(30, perNightForMode(APT, 'monthly'))
-    expect(Math.abs(total - 25000)).toBeLessThanOrEqual(0.1) // 30 × 833.33 = 24999.90
+    expect(total).toBe(24990) // 30 × 833 — whole kwacha, K10 under the flat 25,000
+    expect(Number.isInteger(total)).toBe(true)
   })
 
   it('an exact-week stay on the weekly rate matches the flat weekly figure', () => {
