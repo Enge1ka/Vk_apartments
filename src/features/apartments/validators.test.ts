@@ -40,4 +40,16 @@ describe('validateApartment', () => {
   it('rejects an unknown status', () => {
     expect(validateApartment({ ...BASE, status: 'demolished' }).valid).toBe(false)
   })
+
+  it('rounds decimal rates to whole kwacha on the way in', () => {
+    const result = validateApartment({ ...BASE, daily_rate: '1799.99', weekly_rate: '7000.4', monthly_rate: '24999.5' })
+    expect(result.valid).toBe(true)
+    expect(result.data?.daily_rate).toBe(1800)
+    expect(result.data?.weekly_rate).toBe(7000)
+    expect(result.data?.monthly_rate).toBe(25000)
+  })
+
+  it('still rejects junk that is not a number', () => {
+    expect(validateApartment({ ...BASE, daily_rate: 'abc' }).valid).toBe(false)
+  })
 })

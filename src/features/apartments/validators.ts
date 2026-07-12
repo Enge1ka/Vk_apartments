@@ -3,8 +3,10 @@ import { APARTMENT_STATUS } from '@/shared/constants/status'
 
 // Form inputs arrive as strings; treat '' the same as "not provided" instead
 // of coercing it to 0, matching the previous ad hoc `form.x ? Number(form.x) : null` checks.
+// Rates round to whole kwacha (Math.round(NaN) stays NaN, so junk still fails
+// the number check) — decimal rates only ever produced float-drift totals.
 const optionalRate = z.preprocess(
-  (v) => (v === '' || v === null || v === undefined ? undefined : Number(v)),
+  (v) => (v === '' || v === null || v === undefined ? undefined : Math.round(Number(v))),
   z.number('Must be a number').nonnegative('Must be 0 or greater').optional()
 )
 
@@ -13,7 +15,7 @@ export const apartmentSchema = z.object({
   apartment_number: z.string().trim().min(1, 'Apartment number is required'),
   type: z.string().min(1, 'Type is required'),
   daily_rate: z.preprocess(
-    (v) => (v === '' || v === null || v === undefined ? undefined : Number(v)),
+    (v) => (v === '' || v === null || v === undefined ? undefined : Math.round(Number(v))),
     z.number('Daily rate is required').positive('Daily rate must be greater than 0')
   ),
   weekly_rate: optionalRate,

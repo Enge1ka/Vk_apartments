@@ -592,7 +592,7 @@ export default function BookingDetailPage() {
                 </div>
                 <div>
                   <Label htmlFor="extend-rate">Rate per Night (ZMW)</Label>
-                  <Input id="extend-rate" type="number" min="0" step="0.01"
+                  <Input id="extend-rate" type="number" min="0" step="1"
                     value={extendForm.rate_per_day} onChange={e => setExtendForm(f => ({ ...f, rate_per_day: e.target.value }))} />
                 </div>
                 {rateChanged && (
@@ -688,7 +688,7 @@ export default function BookingDetailPage() {
                 </div>
                 <div>
                   <Label htmlFor="edit-rate">Rate per Night (ZMW)</Label>
-                  <Input id="edit-rate" type="number" min="0" step="0.01" value={editForm.rate_per_day} onChange={e => setEditForm(f => ({ ...f, rate_per_day: e.target.value }))} />
+                  <Input id="edit-rate" type="number" min="0" step="1" value={editForm.rate_per_day} onChange={e => setEditForm(f => ({ ...f, rate_per_day: e.target.value }))} />
                 </div>
                 {nights > 0 && (
                   <div className="bg-blue-50 rounded-xl p-3 text-sm text-blue-700">

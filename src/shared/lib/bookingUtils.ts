@@ -9,7 +9,11 @@ export function calcDays(checkIn?: string | null, checkOut?: string | null): num
 }
 
 export function calcTotal(days: number, ratePerDay: number): number {
-  return days * ratePerDay
+  // Round to whole ngwee so this matches the database's numeric(10,2)
+  // line_total exactly. Without it, float drift (e.g. 15 × 1799.99 =
+  // 26999.849999999999) leaves the total a hair under the amount shown on
+  // screen, so typing the displayed total fails the "amount ≤ total" check.
+  return Math.round(days * ratePerDay * 100) / 100
 }
 
 export type RateMode = 'daily' | 'weekly' | 'monthly'
@@ -27,21 +31,28 @@ export interface PeriodRates {
   monthly_rate?: number | null
 }
 
+// Whole-kwacha policy: every rate the app produces is rounded to whole kwacha —
+// ngwee only ever caused float drift and unpayable totals (K26,999.85), and VK
+// prices in whole kwacha anyway. Historical decimal amounts already in the
+// database still display faithfully via formatCurrency.
+export function roundKwacha(amount: number): number {
+  return Math.round(amount)
+}
+
 // The per-night price a billing mode works out to. Weekly and monthly rates are
 // flat period prices spread evenly across the period (÷7, ÷30) so any stay
 // length gets a smooth discount rather than odd whole-block jumps. Rounded to
-// whole ngwee because rate_per_day is stored as numeric(10,2); the line total is
-// then nights × this rounded rate, so a period that isn't an exact multiple can
-// land a few ngwee off the round figure — which the booking screen shows before
+// whole kwacha (see roundKwacha), so a period that isn't an exact multiple can
+// land a few kwacha off the flat figure — which the booking screen shows before
 // you confirm. Falls back to the daily rate if the chosen period rate is unset.
 export function perNightForMode(apt: PeriodRates, mode: RateMode): number {
   if (mode === 'weekly' && apt.weekly_rate && apt.weekly_rate > 0) {
-    return Math.round((apt.weekly_rate / 7) * 100) / 100
+    return roundKwacha(apt.weekly_rate / 7)
   }
   if (mode === 'monthly' && apt.monthly_rate && apt.monthly_rate > 0) {
-    return Math.round((apt.monthly_rate / 30) * 100) / 100
+    return roundKwacha(apt.monthly_rate / 30)
   }
-  return apt.daily_rate
+  return roundKwacha(apt.daily_rate)
 }
 
 // Which billing modes make sense for a stay of `nights` nights: always daily;
@@ -77,10 +88,13 @@ export function formatCurrency(amount?: number | null): string {
     console.error('[formatCurrency] received NaN amount')
     return '—'
   }
+  // Whole amounts show with no decimals (K1,800 not K1,800.00); historical
+  // fractional amounts keep their ngwee rather than being misrepresented.
   return new Intl.NumberFormat('en-ZM', {
     style: 'currency',
     currency: 'ZMW',
-    minimumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 2,
   }).format(value)
 }
 
