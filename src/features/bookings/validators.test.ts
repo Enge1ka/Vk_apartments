@@ -55,6 +55,16 @@ describe('validateInitialPayment', () => {
   it('allows paying the full total upfront', () => {
     expect(validateInitialPayment('1000', 1000).valid).toBe(true)
   })
+
+  it('accepts the exact total even when float drift leaves it a hair short', () => {
+    // 15 × 1799.99 in raw float is 26999.849999999999; typing 26999.85 must pass.
+    const driftedTotal = 15 * 1799.99
+    expect(validateInitialPayment('26999.85', driftedTotal).valid).toBe(true)
+  })
+
+  it('still rejects a real overpayment', () => {
+    expect(validateInitialPayment('27000', 26999.85).valid).toBe(false)
+  })
 })
 
 describe('validateCancellationReason', () => {

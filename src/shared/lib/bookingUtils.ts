@@ -9,7 +9,11 @@ export function calcDays(checkIn?: string | null, checkOut?: string | null): num
 }
 
 export function calcTotal(days: number, ratePerDay: number): number {
-  return days * ratePerDay
+  // Round to whole ngwee so this matches the database's numeric(10,2)
+  // line_total exactly. Without it, float drift (e.g. 15 × 1799.99 =
+  // 26999.849999999999) leaves the total a hair under the amount shown on
+  // screen, so typing the displayed total fails the "amount ≤ total" check.
+  return Math.round(days * ratePerDay * 100) / 100
 }
 
 export type RateMode = 'daily' | 'weekly' | 'monthly'

@@ -33,6 +33,13 @@ describe('calcTotal', () => {
   it('multiplies days by the daily rate', () => {
     expect(calcTotal(3, 100)).toBe(300)
   })
+
+  it('rounds to whole ngwee so a decimal rate has no float drift', () => {
+    // 15 × 1799.99 is 26999.849999999999 in raw float — must land on 26999.85
+    // so paying the displayed total is accepted.
+    expect(calcTotal(15, 1799.99)).toBe(26999.85)
+    expect(calcTotal(30, 833.33)).toBe(24999.9)
+  })
 })
 
 describe('formatCurrency', () => {
