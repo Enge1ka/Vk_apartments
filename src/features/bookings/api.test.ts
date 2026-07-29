@@ -3,7 +3,7 @@ import { supabase } from '@/shared/lib/supabase'
 import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
-  cancelBooking, createBooking, extendRoom, extendRoomNewRate, shortenRoom, editRoom, getBookingStatusSummary, hasOverlappingBooking,
+  cancelBooking, createBooking, extendRoom, extendRoomNewRate, shortenRoom, editRoom, switchRoom, getBookingStatusSummary, hasOverlappingBooking,
   listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, listRoomOccupancy, updateRoomStatus,
 } from './api'
 
@@ -318,5 +318,25 @@ describe('editRoom', () => {
   it('maps an exclusion violation to a friendly overlap message', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { code: '23P01', message: 'exclusion' } } as any)
     await expect(editRoom('room-1', '2026-02-01', '2026-02-04', 1800)).rejects.toThrow(/already booked for those dates/)
+  })
+})
+
+describe('switchRoom', () => {
+  it('calls switch_room with the room, target apartment, switch date, and rate', async () => {
+    mockRpc.mockResolvedValue({ data: { mode: 'split', new_booking_apartment_id: 'seg-2' }, error: null } as any)
+    await switchRoom('room-1', 'apt-2', '2026-01-05', 1500)
+    expect(mockRpc).toHaveBeenCalledWith('switch_room', {
+      p_booking_apartment_id: 'room-1', p_new_apartment_id: 'apt-2', p_switch_date: '2026-01-05', p_rate_per_day: 1500,
+    })
+  })
+
+  it('maps an exclusion violation to a friendly overlap message', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { code: '23P01', message: 'exclusion' } } as any)
+    await expect(switchRoom('room-1', 'apt-2', '2026-01-05', 1500)).rejects.toThrow(/already booked for those dates/)
+  })
+
+  it('passes non-exclusion errors through unchanged', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'Switch date must be within the stay' } } as any)
+    await expect(switchRoom('room-1', 'apt-2', '2026-01-05', 1500)).rejects.toMatchObject({ message: 'Switch date must be within the stay' })
   })
 })
