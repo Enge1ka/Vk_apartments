@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { addDays, parseISO } from 'date-fns'
 import { useAuth } from '@/features/auth/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Badge } from '@/shared/ui/Badge'
@@ -8,15 +9,16 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '
 import { Select } from '@/shared/ui/Select'
 import { Label } from '@/shared/ui/Label'
 import { Input } from '@/shared/ui/Input'
-import { formatCurrency, formatDate, todayLocalISO, calcDays } from '@/shared/lib/bookingUtils'
+import { formatCurrency, formatDate, todayLocalISO, toLocalISODate, calcDays } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt, shareReceiptWhatsApp } from '@/shared/lib/receiptLazy'
 import type { ReceiptData } from '@/shared/lib/receiptGenerator'
-import { AlertTriangle, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus, CalendarMinus, Undo2, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ChevronLeft, Download, Share2, Plus, LogIn, LogOut, CalendarPlus, CalendarMinus, Undo2, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BOOKING_STATUS, BOOKING_STATUS_BADGE, PAYMENT_METHOD_OPTIONS, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import type { BookingStatus } from '@/shared/constants/status'
-import { cancelBooking, updateRoomStatus, extendRoom, extendRoomNewRate, shortenRoom, editRoom, type BookingRoom } from '../api'
+import { cancelBooking, updateRoomStatus, extendRoom, extendRoomNewRate, shortenRoom, editRoom, switchRoom, type BookingRoom } from '../api'
+import { listAvailableApartmentsForDates, type Apartment } from '@/features/apartments/api'
 import { recordPayment, recordRefund } from '@/features/payments/api'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
@@ -91,6 +93,11 @@ export default function BookingDetailPage() {
   const [shortenDate, setShortenDate] = useState('')
   const [roomToEdit, setRoomToEdit] = useState<BookingRoom | null>(null)
   const [editForm, setEditForm] = useState({ check_in_date: '', check_out_date: '', rate_per_day: '' })
+  const [roomToSwitch, setRoomToSwitch] = useState<BookingRoom | null>(null)
+  const [switchForm, setSwitchForm] = useState({ switch_date: '', apartment_id: '', rate_per_day: '' })
+  const [switchApartments, setSwitchApartments] = useState<Apartment[]>([])
+  const [lastCheckedSwitchRange, setLastCheckedSwitchRange] = useState<string | null>(null)
+  const latestSwitchRangeRef = useRef<string | null>(null)
   const [refundDialog, setRefundDialog] = useState(false)
   const [refundForm, setRefundForm] = useState({ amount: '', payment_method: 'cash', reason: '' })
   const [refundError, setRefundError] = useState<string | null>(null)
@@ -99,6 +106,28 @@ export default function BookingDetailPage() {
   useEffect(() => {
     if (accessDenied) navigate('/bookings')
   }, [accessDenied, navigate])
+
+  // Re-check availability whenever the switch dialog is open on a valid date —
+  // race-guarded the same way NewBookingPage guards its apartment picker.
+  useEffect(() => {
+    const room = roomToSwitch
+    const locId = room?.apartment?.location_id
+    const ready = !!room && !!locId && !!switchForm.switch_date
+      && switchForm.switch_date >= room.check_in_date && switchForm.switch_date < room.check_out_date
+    if (!ready || !room || !locId) return
+    const range = `${room.id}|${switchForm.switch_date}`
+    latestSwitchRangeRef.current = range
+    listAvailableApartmentsForDates(locId, switchForm.switch_date, room.check_out_date)
+      .then(result => {
+        if (latestSwitchRangeRef.current !== range) return
+        setSwitchApartments(result.filter(a => a.id !== room.apartment_id))
+        setLastCheckedSwitchRange(range)
+      })
+      .catch(() => {
+        if (latestSwitchRangeRef.current !== range) return
+        toast.error('Could not check apartment availability')
+      })
+  }, [roomToSwitch, switchForm.switch_date])
 
   if (loading) return <div className="p-4 text-center text-gray-400 py-16">Loading…</div>
   if (!rawBooking) return <div className="p-4 text-center text-gray-400 py-16">Booking not found</div>
@@ -277,6 +306,40 @@ export default function BookingDetailPage() {
     }
   }
 
+  // Switch is always applied to the latest segment of the apartment (like
+  // Extend/Shorten) — switching from inside an earlier segment of a
+  // multi-segment apartment isn't supported.
+  function openSwitch(room: BookingRoom) {
+    const maxDate = toLocalISODate(addDays(parseISO(room.check_out_date), -1))
+    const today = todayLocalISO()
+    const seed = today < room.check_in_date ? room.check_in_date : today > maxDate ? maxDate : today
+    setRoomToSwitch(room)
+    setSwitchForm({ switch_date: seed, apartment_id: '', rate_per_day: '' })
+  }
+
+  async function handleSwitch() {
+    if (!roomToSwitch) return
+    const { switch_date, apartment_id, rate_per_day } = switchForm
+    if (!switch_date) { toast.error('Pick the switch date'); return }
+    if (switch_date < roomToSwitch.check_in_date || switch_date >= roomToSwitch.check_out_date) {
+      toast.error('Switch date must be within the stay (before check-out)'); return
+    }
+    if (!apartment_id) { toast.error('Pick the new apartment'); return }
+    const rate = Number(rate_per_day)
+    if (!rate || rate <= 0) { toast.error('Rate must be greater than 0'); return }
+    setSaving(true)
+    try {
+      await switchRoom(roomToSwitch.id, apartment_id, switch_date, rate)
+      toast.success('Room switched')
+      setRoomToSwitch(null)
+      refetch()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleRecordRefund() {
     const amt = Number(refundForm.amount)
     if (!amt || amt <= 0) { setRefundError('Enter a valid amount'); return }
@@ -417,6 +480,9 @@ export default function BookingDetailPage() {
                         <CalendarMinus size={14} /> Shorten
                       </Button>
                     )}
+                    <Button size="sm" variant="outline" onClick={() => openSwitch(group.latest)} disabled={saving}>
+                      <ArrowLeftRight size={14} /> Switch Room
+                    </Button>
                   </div>
                 )}
               </div>
@@ -703,6 +769,93 @@ export default function BookingDetailPage() {
           <Button variant="outline" className="flex-1" onClick={() => setRoomToEdit(null)}>Cancel</Button>
           <Button className="flex-1" onClick={handleEdit} disabled={saving}>
             {saving ? 'Saving…' : 'Save Changes'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog open={!!roomToSwitch} onClose={() => setRoomToSwitch(null)}>
+        <DialogHeader onClose={() => setRoomToSwitch(null)}>
+          <DialogTitle>Switch Room</DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-3">
+          {roomToSwitch && (() => {
+            const maxDate = toLocalISODate(addDays(parseISO(roomToSwitch.check_out_date), -1))
+            const wholeMove = switchForm.switch_date === roomToSwitch.check_in_date
+            const dateValid = !!switchForm.switch_date
+              && switchForm.switch_date >= roomToSwitch.check_in_date && switchForm.switch_date < roomToSwitch.check_out_date
+            const movedNights = dateValid ? calcDays(switchForm.switch_date, roomToSwitch.check_out_date) : 0
+            const keptNights = dateValid && !wholeMove ? calcDays(roomToSwitch.check_in_date, switchForm.switch_date) : 0
+            const rate = Number(switchForm.rate_per_day) || 0
+            const delta = movedNights * rate - movedNights * roomToSwitch.rate_per_day
+            const newTotal = booking.total_amount + delta
+            const newOutstanding = booking.outstanding_balance + delta
+            const currentSwitchRange = dateValid ? `${roomToSwitch.id}|${switchForm.switch_date}` : null
+            const checkingAvailability = dateValid && lastCheckedSwitchRange !== currentSwitchRange
+            const switchOptions = dateValid && !checkingAvailability ? switchApartments : []
+            const selectedApartment = switchOptions.find(a => a.id === switchForm.apartment_id)
+            return (
+              <>
+                <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                  <p className="font-semibold text-gray-800">{roomToSwitch.apartment?.apartment_number}</p>
+                  <p className="text-xs text-gray-500">
+                    Currently {formatDate(roomToSwitch.check_in_date)} → {formatDate(roomToSwitch.check_out_date)} · {formatCurrency(roomToSwitch.rate_per_day)}/night
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="switch-date">Switch Date</Label>
+                  <Input id="switch-date" type="date" min={roomToSwitch.check_in_date} max={maxDate}
+                    value={switchForm.switch_date}
+                    onChange={e => setSwitchForm(f => ({ ...f, switch_date: e.target.value, apartment_id: '', rate_per_day: '' }))} />
+                </div>
+                <div>
+                  <Label htmlFor="switch-apartment">New Apartment</Label>
+                  <Select id="switch-apartment" value={switchForm.apartment_id} disabled={!dateValid || checkingAvailability}
+                    onChange={e => {
+                      const apt = switchOptions.find(a => a.id === e.target.value)
+                      setSwitchForm(f => ({ ...f, apartment_id: e.target.value, rate_per_day: apt ? String(apt.daily_rate) : f.rate_per_day }))
+                    }}>
+                    <option value="">
+                      {!dateValid ? 'Pick a switch date first…' : checkingAvailability ? 'Checking availability…' : 'Select apartment…'}
+                    </option>
+                    {switchOptions.map(a => (
+                      <option key={a.id} value={a.id}>{a.apartment_number} — {a.type} · {formatCurrency(a.daily_rate)}/night</option>
+                    ))}
+                  </Select>
+                  {dateValid && !checkingAvailability && switchOptions.length === 0 && (
+                    <p className="text-xs text-red-500 mt-1">No apartments free for those dates at this location.</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="switch-rate">Rate per Night (ZMW)</Label>
+                  <Input id="switch-rate" type="number" min="0" step="0.01"
+                    value={switchForm.rate_per_day} onChange={e => setSwitchForm(f => ({ ...f, rate_per_day: e.target.value }))} />
+                  <p className="text-xs text-gray-400 mt-1">Prefilled from the apartment's daily rate — adjust to change what's charged for the moved nights.</p>
+                </div>
+                {selectedApartment && rate > 0 && movedNights > 0 && (
+                  <div className="bg-blue-50 rounded-xl p-3 text-sm text-blue-700 space-y-1">
+                    {wholeMove ? (
+                      <p>The entire stay moves to {selectedApartment.apartment_number} and is re-billed at {formatCurrency(rate)}/night.</p>
+                    ) : (
+                      <p>{movedNights} night{movedNights > 1 ? 's' : ''} move to {selectedApartment.apartment_number} @ {formatCurrency(rate)}</p>
+                    )}
+                    <p><span className="font-medium">{delta >= 0 ? '+' : ''}{formatCurrency(delta)}</span> to the total</p>
+                    <p>New total {formatCurrency(newTotal)} · Outstanding {formatCurrency(newOutstanding)}</p>
+                    {keptNights > 0 && (
+                      <p className="text-gray-500">First {keptNights} night{keptNights > 1 ? 's' : ''} stay on {roomToSwitch.apartment?.apartment_number} at {formatCurrency(roomToSwitch.rate_per_day)}.</p>
+                    )}
+                    {newOutstanding < 0 && (
+                      <p className="text-amber-700">This would leave a credit of {formatCurrency(-newOutstanding)} — record a refund after switching.</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" className="flex-1" onClick={() => setRoomToSwitch(null)}>Cancel</Button>
+          <Button className="flex-1" onClick={handleSwitch} disabled={saving}>
+            {saving ? 'Switching…' : 'Switch Room'}
           </Button>
         </DialogFooter>
       </Dialog>

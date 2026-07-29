@@ -15,6 +15,7 @@ const ACTION_LABELS: Record<string, string> = {
   extend: 'Extended stay',
   shorten: 'Shortened stay',
   edit_room: 'Edited room',
+  switch_room: 'Switched room',
   status_change: 'Status change',
   payment: 'Payment recorded',
   refund: 'Refund recorded',
@@ -36,6 +37,8 @@ function summarize(action: string, details: Record<string, any> | null): string 
       return `${details.apartment ?? ''} · ${details.from?.check_out} → ${details.to?.check_out}`
     case 'edit_room':
       return `${details.apartment ?? ''} · dates/rate updated`
+    case 'switch_room':
+      return `${details.from_apartment ?? ''} → ${details.to_apartment ?? ''} · from ${details.switch_date ?? ''}`
     case 'check_in':
     case 'check_out':
     case 'cancel':

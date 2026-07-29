@@ -631,6 +631,26 @@ export async function editRoom(roomId: string, checkInDate: string, checkOutDate
   }
 }
 
+// Moves the remainder of a room's stay to a different apartment from the
+// switch date; nights already stayed keep their room and rate, the moved
+// nights are billed at ratePerDay (prefilled from the target's daily rate,
+// editable — the "adjust the amount" provision). If the switch date is the
+// room's check-in the whole segment moves instead. Totals recompute server-side.
+export async function switchRoom(roomId: string, newApartmentId: string, switchDate: string, ratePerDay: number): Promise<void> {
+  const { error } = await supabase.rpc('switch_room', {
+    p_booking_apartment_id: roomId,
+    p_new_apartment_id: newApartmentId,
+    p_switch_date: switchDate,
+    p_rate_per_day: ratePerDay,
+  })
+  if (error) {
+    if (error.code === EXCLUSION_VIOLATION) {
+      throw new Error('That apartment is already booked for those dates. Pick a different room or adjust the switch date.')
+    }
+    throw error
+  }
+}
+
 // Admin-only: cancels every room of a booking at once and releases the rooms.
 export async function cancelBooking(bookingId: string, reason: string, staffEmail?: string | null): Promise<void> {
   const note = `Cancelled on ${todayLocalISO()} by ${staffEmail || 'staff'}: ${reason}`
