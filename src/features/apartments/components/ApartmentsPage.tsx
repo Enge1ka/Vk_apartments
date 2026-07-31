@@ -288,17 +288,17 @@ export default function ApartmentsPage() {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <Label htmlFor="apt-daily-rate">Daily Rate *</Label>
-              <Input id="apt-daily-rate" type="number" min="0" step="0.01" placeholder="0.00" {...field('daily_rate')} aria-invalid={!!formErrors.daily_rate} />
+              <Input id="apt-daily-rate" type="number" min="0" step="1" placeholder="0" {...field('daily_rate')} aria-invalid={!!formErrors.daily_rate} />
               {formErrors.daily_rate && <p className="text-xs text-red-500 mt-1">{formErrors.daily_rate}</p>}
             </div>
             <div>
               <Label htmlFor="apt-weekly-rate">Weekly</Label>
-              <Input id="apt-weekly-rate" type="number" min="0" step="0.01" placeholder="0.00" {...field('weekly_rate')} aria-invalid={!!formErrors.weekly_rate} />
+              <Input id="apt-weekly-rate" type="number" min="0" step="1" placeholder="0" {...field('weekly_rate')} aria-invalid={!!formErrors.weekly_rate} />
               {formErrors.weekly_rate && <p className="text-xs text-red-500 mt-1">{formErrors.weekly_rate}</p>}
             </div>
             <div>
               <Label htmlFor="apt-monthly-rate">Monthly</Label>
-              <Input id="apt-monthly-rate" type="number" min="0" step="0.01" placeholder="0.00" {...field('monthly_rate')} aria-invalid={!!formErrors.monthly_rate} />
+              <Input id="apt-monthly-rate" type="number" min="0" step="1" placeholder="0" {...field('monthly_rate')} aria-invalid={!!formErrors.monthly_rate} />
               {formErrors.monthly_rate && <p className="text-xs text-red-500 mt-1">{formErrors.monthly_rate}</p>}
             </div>
           </div>

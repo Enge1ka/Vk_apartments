@@ -46,7 +46,9 @@ export function validateApartmentStep(form: unknown): { valid: boolean; errors: 
 export function validateInitialPayment(amountToPay: string | number, totalAmount: number): { valid: boolean; error: string | null } {
   const amount = Number(amountToPay) || 0
   if (amount < 0) return { valid: false, error: 'Payment cannot be negative' }
-  if (amount > totalAmount) return { valid: false, error: 'Payment cannot exceed the total amount' }
+  // Half-a-ngwee tolerance so paying the exact displayed total isn't rejected
+  // by float drift in the total (see calcTotal); real overpayment still fails.
+  if (amount > totalAmount + 0.005) return { valid: false, error: 'Payment cannot exceed the total amount' }
   return { valid: true, error: null }
 }
 

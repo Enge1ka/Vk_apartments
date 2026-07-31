@@ -9,7 +9,9 @@ export function validatePaymentAmount(amount: string | number, outstandingBalanc
     (v) => (v === '' || v === null || v === undefined ? undefined : Number(v)),
     z.number('Enter a valid amount')
       .positive('Enter a valid amount')
-      .max(Number(outstandingBalance) || 0, 'Payment cannot exceed the outstanding balance')
+      // Half-a-ngwee tolerance so paying the exact displayed balance isn't
+      // rejected by float drift; a genuine overpayment still fails.
+      .max((Number(outstandingBalance) || 0) + 0.005, 'Payment cannot exceed the outstanding balance')
   )
   const result = schema.safeParse(amount)
   if (result.success) return { valid: true, value: result.data, error: null }

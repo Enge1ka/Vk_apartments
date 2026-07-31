@@ -6,7 +6,7 @@ import { Input } from '@/shared/ui/Input'
 import { Label } from '@/shared/ui/Label'
 import { Select } from '@/shared/ui/Select'
 import { Card, CardContent } from '@/shared/ui/Card'
-import { formatCurrency, calcDays, calcTotal, todayLocalISO, perNightForMode, eligibleRateModes, type RateMode } from '@/shared/lib/bookingUtils'
+import { formatCurrency, calcDays, calcTotal, todayLocalISO, perNightForMode, eligibleRateModes, roundKwacha, type RateMode } from '@/shared/lib/bookingUtils'
 import { getErrorMessage } from '@/shared/lib/utils'
 import { downloadReceipt } from '@/shared/lib/receiptLazy'
 import { ChevronLeft, ChevronRight, Check, Plus, Trash2, Search } from 'lucide-react'
@@ -110,10 +110,11 @@ export default function NewBookingPage() {
       })
   }, [locationIdSel, draft.check_in_date, draft.check_out_date])
 
-  // Selecting an apartment also prefills the draft rate from its daily rate.
+  // Selecting an apartment also prefills the draft rate from its daily rate
+  // (rounded — whole-kwacha policy, in case an old stored rate has ngwee).
   function selectDraftApartment(apartmentId: string) {
     const apt = apartments.find(a => a.id === apartmentId)
-    setDraft(d => ({ ...d, apartment_id: apartmentId, rate_per_day: apt ? String(apt.daily_rate) : '' }))
+    setDraft(d => ({ ...d, apartment_id: apartmentId, rate_per_day: apt ? String(roundKwacha(apt.daily_rate)) : '' }))
   }
 
   // Picking Daily/Weekly/Monthly just rewrites the per-night rate; the total
@@ -181,7 +182,8 @@ export default function NewBookingPage() {
     if (!apt) return null
     if (!draft.check_in_date || !draft.check_out_date) return null
     if (draft.check_out_date <= draft.check_in_date) return null
-    const rate = Number(draft.rate_per_day)
+    // Whole-kwacha policy: a hand-typed decimal rate is rounded on the way in.
+    const rate = roundKwacha(Number(draft.rate_per_day))
     if (!rate || rate <= 0) return null
     return {
       apartment_id: apt.id,
@@ -482,7 +484,7 @@ export default function NewBookingPage() {
                 {draft.apartment_id && (
                   <div>
                     <Label htmlFor="nb-rate">Rate per Day (ZMW)</Label>
-                    <Input id="nb-rate" type="number" min="0" step="0.01" value={draft.rate_per_day} onChange={e => setDraft(d => ({ ...d, rate_per_day: e.target.value }))} />
+                    <Input id="nb-rate" type="number" min="0" step="1" value={draft.rate_per_day} onChange={e => setDraft(d => ({ ...d, rate_per_day: e.target.value }))} />
                   </div>
                 )}
                 <Button variant="outline" className="w-full" onClick={addRoom} disabled={!draft.apartment_id}>
