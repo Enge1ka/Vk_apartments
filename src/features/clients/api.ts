@@ -88,6 +88,20 @@ export async function searchClients(term: string): Promise<Client[]> {
   return (data ?? []) as Client[]
 }
 
+export async function updateClient(id: string, input: ClientInput): Promise<void> {
+  const { error } = await supabase
+    .from('clients')
+    .update({
+      full_name: input.full_name,
+      phone: input.phone,
+      nrc_or_passport: input.nrc_or_passport || null,
+      email: input.email || null,
+      company: input.company || null,
+    })
+    .eq('id', id)
+  if (error) throw error
+}
+
 // Matches "0977123456", "+260977123456", and "260 97 712 3456" as the same
 // number — staff and clients type phone numbers inconsistently, and an
 // exact-string match would otherwise create a duplicate client per format.

@@ -1,17 +1,59 @@
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Badge } from '@/shared/ui/Badge'
+import { Button } from '@/shared/ui/Button'
+import { Input } from '@/shared/ui/Input'
+import { Label } from '@/shared/ui/Label'
+import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '@/shared/ui/Dialog'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
-import { ChevronLeft, Phone, CreditCard } from 'lucide-react'
+import { ChevronLeft, Phone, CreditCard, Pencil } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { BOOKING_STATUS_BADGE, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
-import { getClient } from '../api'
+import { getClient, updateClient } from '../api'
+import toast from 'react-hot-toast'
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { data: client, loading, error } = useSupabaseQuery(() => getClient(id!), [id], 'clients.getClient')
+  const { data: client, loading, error, refetch } = useSupabaseQuery(() => getClient(id!), [id], 'clients.getClient')
+  const [editOpen, setEditOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ full_name: '', phone: '', nrc_or_passport: '', email: '', company: '' })
+
+  function openEdit() {
+    if (!client) return
+    setForm({
+      full_name: client.full_name || '',
+      phone: client.phone || '',
+      nrc_or_passport: client.nrc_or_passport || '',
+      email: client.email || '',
+      company: client.company || '',
+    })
+    setEditOpen(true)
+  }
+
+  async function handleSave() {
+    if (!client || !form.full_name.trim() || !form.phone.trim()) return
+    setSaving(true)
+    try {
+      await updateClient(client.id, {
+        full_name: form.full_name.trim(),
+        phone: form.phone.trim(),
+        nrc_or_passport: form.nrc_or_passport.trim() || null,
+        email: form.email.trim() || null,
+        company: form.company.trim() || null,
+      })
+      toast.success('Client updated')
+      setEditOpen(false)
+      refetch()
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update client')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading) return <div className="p-4 text-center text-gray-400 py-16">Loading…</div>
   if (error) return <div className="p-4"><ErrorBanner error={error} /></div>
@@ -27,10 +69,13 @@ export default function ClientDetailPage() {
         <button onClick={() => navigate('/clients')} className="p-2 rounded-xl hover:bg-gray-100">
           <ChevronLeft size={20} />
         </button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-lg font-bold text-gray-900">{client.full_name}</h1>
           <p className="text-sm text-gray-500 flex items-center gap-1"><Phone size={12} /> {client.phone}</p>
         </div>
+        <Button variant="ghost" size="icon" onClick={openEdit} aria-label="Edit client">
+          <Pencil size={18} />
+        </Button>
       </div>
 
       <Card>
@@ -92,6 +137,40 @@ export default function ClientDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)}>
+        <DialogHeader onClose={() => setEditOpen(false)}>
+          <DialogTitle>Edit Client</DialogTitle>
+        </DialogHeader>
+        <DialogContent className="space-y-3">
+          <div>
+            <Label htmlFor="edit-name">Full Name *</Label>
+            <Input id="edit-name" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
+          </div>
+          <div>
+            <Label htmlFor="edit-phone">Phone *</Label>
+            <Input id="edit-phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          </div>
+          <div>
+            <Label htmlFor="edit-nrc">NRC / Passport</Label>
+            <Input id="edit-nrc" value={form.nrc_or_passport} onChange={e => setForm(f => ({ ...f, nrc_or_passport: e.target.value }))} />
+          </div>
+          <div>
+            <Label htmlFor="edit-email">Email</Label>
+            <Input id="edit-email" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          </div>
+          <div>
+            <Label htmlFor="edit-company">Company</Label>
+            <Input id="edit-company" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} />
+          </div>
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)}>Cancel</Button>
+          <Button className="flex-1" onClick={handleSave} disabled={saving || !form.full_name.trim() || !form.phone.trim()}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </div>
   )
 }
