@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/features/auth/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
@@ -7,11 +8,13 @@ import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
 import { BOOKING_STATUS } from '@/shared/constants/status'
 import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
+import { updateRoomStatus } from '@/features/bookings/api'
 import {
   Building2, BedDouble, CheckCircle, AlertCircle,
   TrendingUp, Clock, LogOut, Plus, Home, AlertTriangle, type LucideIcon,
 } from 'lucide-react'
 import { useDashboardData } from '../useDashboardData'
+import toast from 'react-hot-toast'
 
 interface StatCardProps {
   label: string
@@ -48,7 +51,40 @@ function StatCard({ label, value, sub, icon: Icon, color = 'blue' }: StatCardPro
 
 export default function DashboardPage() {
   const { user, profile, signOut, isRestricted, locationId } = useAuth()
-  const { stats, locationStats, inHouse, overdue, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading, error } = useDashboardData({ isRestricted, locationId })
+  const { stats, locationStats, inHouse, overdue, upcomingCheckIns, upcomingCheckOuts, recentPayments, loading, error, refetch } = useDashboardData({ isRestricted, locationId })
+  const [checkingOut, setCheckingOut] = useState<Set<string>>(new Set())
+  const [bulkCheckingOut, setBulkCheckingOut] = useState(false)
+
+  async function handleCheckOut(roomId: string) {
+    setCheckingOut(prev => new Set(prev).add(roomId))
+    try {
+      await updateRoomStatus(roomId, BOOKING_STATUS.CHECKED_OUT)
+      toast.success('Checked out')
+      refetch()
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to check out')
+    } finally {
+      setCheckingOut(prev => { const s = new Set(prev); s.delete(roomId); return s })
+    }
+  }
+
+  async function handleCheckOutAll() {
+    if (!overdue.length) return
+    setBulkCheckingOut(true)
+    let ok = 0, fail = 0
+    for (const r of overdue) {
+      try {
+        await updateRoomStatus(r.id, BOOKING_STATUS.CHECKED_OUT)
+        ok++
+      } catch {
+        fail++
+      }
+    }
+    setBulkCheckingOut(false)
+    if (ok) toast.success(`Checked out ${ok} room${ok > 1 ? 's' : ''}`)
+    if (fail) toast.error(`${fail} failed — open those bookings to resolve manually`)
+    refetch()
+  }
 
   const occupancyPct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
 
@@ -82,25 +118,39 @@ export default function DashboardPage() {
       {overdue.length > 0 && (
         <Card className="border-red-200">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-red-700">
-              <AlertTriangle size={16} className="text-red-600" /> Overdue — needs attention
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-red-700">
+                <AlertTriangle size={16} className="text-red-600" /> Overdue ({overdue.length})
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCheckOutAll}
+                disabled={bulkCheckingOut}
+              >
+                {bulkCheckingOut ? 'Checking out…' : 'Check Out All'}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
-            <p className="text-xs text-gray-500 -mt-1 mb-1">Past check-out but not checked out or cancelled. Check the guest out, extend the stay, or cancel.</p>
+            <p className="text-xs text-gray-500 -mt-1 mb-1">Past check-out but not checked out or cancelled.</p>
             {overdue.map(r => (
-              <Link key={r.id} to={`/bookings/${r.booking_id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <div>
+              <div key={r.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <Link to={`/bookings/${r.booking_id}`} className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800">{r.client?.full_name ?? '—'}</p>
                   <p className="text-xs text-gray-400">{r.apartment?.apartment_number} · {r.apartment?.location?.name}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs font-medium text-red-600">Due out {formatDate(r.check_out_date)}</p>
-                  <Badge variant={r.status === BOOKING_STATUS.CHECKED_IN ? 'purple' : 'info'}>
-                    {r.status === BOOKING_STATUS.CHECKED_IN ? 'Still checked in' : 'Never checked in'}
-                  </Badge>
-                </div>
-              </Link>
+                  <p className="text-xs text-red-600 mt-0.5">Due out {formatDate(r.check_out_date)}</p>
+                </Link>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-2 shrink-0 text-xs"
+                  onClick={() => handleCheckOut(r.id)}
+                  disabled={checkingOut.has(r.id) || bulkCheckingOut}
+                >
+                  {checkingOut.has(r.id) ? 'Checking out…' : 'Check Out'}
+                </Button>
+              </div>
             ))}
           </CardContent>
         </Card>
