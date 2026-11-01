@@ -3,10 +3,9 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/features/auth/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
-import { Badge } from '@/shared/ui/Badge'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
-import { BOOKING_STATUS } from '@/shared/constants/status'
+import { BOOKING_STATUS, type BookingStatus } from '@/shared/constants/status'
 import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
 import { updateRoomStatus } from '@/features/bookings/api'
 import {
@@ -55,17 +54,31 @@ export default function DashboardPage() {
   const [checkingOut, setCheckingOut] = useState<Set<string>>(new Set())
   const [bulkCheckingOut, setBulkCheckingOut] = useState(false)
 
-  async function handleCheckOut(roomId: string) {
+  async function handleRoomAction(roomId: string, newStatus: BookingStatus, label: string) {
     setCheckingOut(prev => new Set(prev).add(roomId))
     try {
-      await updateRoomStatus(roomId, BOOKING_STATUS.CHECKED_OUT)
-      toast.success('Checked out')
+      await updateRoomStatus(roomId, newStatus)
+      toast.success(label)
       refetch()
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to check out')
+      toast.error(e?.message || `Failed: ${label}`)
     } finally {
       setCheckingOut(prev => { const s = new Set(prev); s.delete(roomId); return s })
     }
+  }
+
+  async function handleBookingRooms(bookingId: string, rooms: { id?: string; status?: string }[], newStatus: BookingStatus, label: string) {
+    const eligible = rooms.filter(r => r.id && r.status !== newStatus && r.status !== BOOKING_STATUS.CANCELLED)
+    if (!eligible.length) { toast.error('No eligible rooms'); return }
+    setCheckingOut(prev => { const s = new Set(prev); s.add(bookingId); return s })
+    let ok = 0, fail = 0
+    for (const r of eligible) {
+      try { await updateRoomStatus(r.id!, newStatus); ok++ } catch { fail++ }
+    }
+    setCheckingOut(prev => { const s = new Set(prev); s.delete(bookingId); return s })
+    if (ok) toast.success(label)
+    if (fail) toast.error(`${fail} room${fail > 1 ? 's' : ''} failed`)
+    refetch()
   }
 
   async function handleCheckOutAll() {
@@ -73,12 +86,7 @@ export default function DashboardPage() {
     setBulkCheckingOut(true)
     let ok = 0, fail = 0
     for (const r of overdue) {
-      try {
-        await updateRoomStatus(r.id, BOOKING_STATUS.CHECKED_OUT)
-        ok++
-      } catch {
-        fail++
-      }
+      try { await updateRoomStatus(r.id, BOOKING_STATUS.CHECKED_OUT); ok++ } catch { fail++ }
     }
     setBulkCheckingOut(false)
     if (ok) toast.success(`Checked out ${ok} room${ok > 1 ? 's' : ''}`)
@@ -145,7 +153,7 @@ export default function DashboardPage() {
                   variant="outline"
                   size="sm"
                   className="ml-2 shrink-0 text-xs"
-                  onClick={() => handleCheckOut(r.id)}
+                  onClick={() => handleRoomAction(r.id, BOOKING_STATUS.CHECKED_OUT, 'Checked out')}
                   disabled={checkingOut.has(r.id) || bulkCheckingOut}
                 >
                   {checkingOut.has(r.id) ? 'Checking out…' : 'Check Out'}
@@ -187,20 +195,40 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
             {inHouse.map(b => (
-              <Link key={b.id} to={`/bookings/${b.id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <div>
+              <div key={b.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <Link to={`/bookings/${b.id}`} className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800">{b.client?.full_name}</p>
                   <p className="text-xs text-gray-400">{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}</p>
-                </div>
-                <div className="text-right">
-                  {b.booking_status === BOOKING_STATUS.CONFIRMED
-                    ? <Badge variant="warning">Not checked in</Badge>
-                    : <span className="text-xs text-gray-500">Out {formatDate(b.check_out_date)}</span>}
+                  <span className="text-xs text-gray-500">Out {formatDate(b.check_out_date)}</span>
                   {b.outstanding_balance > 0 && (
                     <p className="text-xs text-red-500 font-medium mt-0.5">{formatCurrency(b.outstanding_balance)} owed</p>
                   )}
+                </Link>
+                <div className="ml-2 shrink-0 flex flex-col gap-1">
+                  {b.booking_status === BOOKING_STATUS.CONFIRMED && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => handleBookingRooms(b.id, b.rooms, BOOKING_STATUS.CHECKED_IN, 'Checked in')}
+                      disabled={checkingOut.has(b.id)}
+                    >
+                      {checkingOut.has(b.id) ? '…' : 'Check In'}
+                    </Button>
+                  )}
+                  {b.booking_status === BOOKING_STATUS.CHECKED_IN && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => handleBookingRooms(b.id, b.rooms, BOOKING_STATUS.CHECKED_OUT, 'Checked out')}
+                      disabled={checkingOut.has(b.id)}
+                    >
+                      {checkingOut.has(b.id) ? '…' : 'Check Out'}
+                    </Button>
+                  )}
                 </div>
-              </Link>
+              </div>
             ))}
           </CardContent>
         </Card>
@@ -215,13 +243,24 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
             {upcomingCheckIns.map(b => (
-              <Link key={b.id} to={`/bookings/${b.id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <div>
+              <div key={b.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <Link to={`/bookings/${b.id}`} className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800">{b.client?.full_name}</p>
                   <p className="text-xs text-gray-400">{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}</p>
-                </div>
-                <span className="text-xs text-gray-500">{formatDate(b.check_in_date)}</span>
-              </Link>
+                  <span className="text-xs text-gray-500">{formatDate(b.check_in_date)}</span>
+                </Link>
+                {b.booking_status === BOOKING_STATUS.CONFIRMED && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-2 shrink-0 text-xs"
+                    onClick={() => handleBookingRooms(b.id, b.rooms, BOOKING_STATUS.CHECKED_IN, 'Checked in')}
+                    disabled={checkingOut.has(b.id)}
+                  >
+                    {checkingOut.has(b.id) ? '…' : 'Check In'}
+                  </Button>
+                )}
+              </div>
             ))}
           </CardContent>
         </Card>
@@ -236,18 +275,25 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
             {upcomingCheckOuts.map(b => (
-              <Link key={b.id} to={`/bookings/${b.id}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <div>
+              <div key={b.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <Link to={`/bookings/${b.id}`} className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800">{b.client?.full_name}</p>
                   <p className="text-xs text-gray-400">{roomNumbers(b.rooms)} · {roomLocationName(b.rooms)}</p>
-                </div>
-                <div className="text-right">
                   <p className="text-xs text-gray-500">{formatDate(b.check_out_date)}</p>
                   {b.outstanding_balance > 0 && (
                     <p className="text-xs text-red-500 font-medium">{formatCurrency(b.outstanding_balance)} owed</p>
                   )}
-                </div>
-              </Link>
+                </Link>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-2 shrink-0 text-xs"
+                  onClick={() => handleBookingRooms(b.id, b.rooms, BOOKING_STATUS.CHECKED_OUT, 'Checked out')}
+                  disabled={checkingOut.has(b.id)}
+                >
+                  {checkingOut.has(b.id) ? '…' : 'Check Out'}
+                </Button>
+              </div>
             ))}
           </CardContent>
         </Card>

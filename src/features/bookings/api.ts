@@ -34,6 +34,8 @@ export function subscribeToBookingChanges(onChange: () => void): () => void {
 // Minimal per-room shape carried by the list/summary views so the UI can show
 // which apartment(s) a booking covers.
 export interface RoomSummary {
+  id?: string
+  status?: BookingStatus
   apartment: { apartment_number: string; type?: string; location: { name: string } | null } | null
 }
 
@@ -124,6 +126,7 @@ export interface UpcomingBooking {
   id: string
   check_in_date: string | null
   check_out_date: string | null
+  booking_status: BookingStatus
   outstanding_balance: number
   client: { full_name: string } | null
   rooms: RoomSummary[]
@@ -181,7 +184,7 @@ export interface CreateBookingResult {
   bookingRef: string
 }
 
-const ROOM_SUMMARY = `rooms:booking_apartments(apartment:apartments(apartment_number, type, location:locations(name)))`
+const ROOM_SUMMARY = `rooms:booking_apartments(id, status, apartment:apartments(apartment_number, type, location:locations(name)))`
 
 const LIST_SELECT = `
   id, booking_reference, check_in_date, check_out_date,
@@ -207,7 +210,7 @@ const OUTSTANDING_SELECT = `
 `
 
 const UPCOMING_SELECT = `
-  id, check_in_date, check_out_date, outstanding_balance,
+  id, check_in_date, check_out_date, booking_status, outstanding_balance,
   client:clients(full_name),
   ${ROOM_SUMMARY}
 `
