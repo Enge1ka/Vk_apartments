@@ -4,8 +4,11 @@ import * as clientsApi from '@/features/clients/api'
 import * as apartmentsApi from '@/features/apartments/api'
 import {
   cancelBooking, createBooking, extendRoom, extendRoomNewRate, shortenRoom, editRoom, switchRoom, getBookingStatusSummary, hasOverlappingBooking,
-  listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, listRoomOccupancy, updateRoomStatus,
+  listBookings, listRoomsForCalendar, listInHouse, listOutstandingBookings, listOverdueRooms, listRoomOccupancy, updateRoomStatus,
+  LOCATION_SCOPE_FILTER,
 } from './api'
+
+const LOCATION_SCOPE_EMBED = 'loc_scope:booking_apartments!inner(apartment:apartments!inner(location_id))'
 
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -179,10 +182,45 @@ describe('listOutstandingBookings', () => {
     expect(result).toEqual([{ id: 'b1' }])
   })
 
-  it('short-circuits when the location has no apartments', async () => {
-    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
-    await expect(listOutstandingBookings('loc-1')).resolves.toEqual([])
-    expect(mockFrom).not.toHaveBeenCalled()
+  it('scopes to a location in a single query, without an ID list', async () => {
+    // No `in` on the fake chain: an `id=in.(...)` filter would throw here.
+    const chain = {
+      select: vi.fn(() => chain), gt: () => chain, neq: () => chain, order: () => chain,
+      eq: vi.fn(() => Promise.resolve({ data: [{ id: 'b1' }], error: null })),
+    }
+    mockFrom.mockReturnValue(chain as any)
+
+    const result = await listOutstandingBookings('loc-1')
+    expect(mockFrom).toHaveBeenCalledTimes(1)
+    expect(chain.select).toHaveBeenCalledWith(expect.stringContaining(LOCATION_SCOPE_EMBED))
+    expect(chain.eq).toHaveBeenCalledWith(LOCATION_SCOPE_FILTER, 'loc-1')
+    expect(result).toEqual([{ id: 'b1' }])
+  })
+})
+
+describe('listBookings', () => {
+  it('lists without the location embed when no location is given', async () => {
+    const chain = { select: vi.fn(() => chain), order: () => Promise.resolve({ data: [{ id: 'b1' }], error: null }) }
+    mockFrom.mockReturnValue(chain as any)
+
+    await expect(listBookings()).resolves.toEqual([{ id: 'b1' }])
+    expect(chain.select).toHaveBeenCalledWith(expect.not.stringContaining('loc_scope'))
+  })
+
+  // Regression: Nkana East's ~640 bookings made the old `id=in.(...)` URL
+  // ~25 KB, and the API rejected every location-scoped list with a 400.
+  it('scopes to a location server-side, whatever the booking count', async () => {
+    const chain = {
+      select: vi.fn(() => chain), order: () => chain,
+      eq: vi.fn(() => Promise.resolve({ data: [{ id: 'b1' }], error: null })),
+    }
+    mockFrom.mockReturnValue(chain as any)
+
+    await expect(listBookings({ locationId: 'loc-1' })).resolves.toEqual([{ id: 'b1' }])
+    expect(mockFrom).toHaveBeenCalledTimes(1)
+    expect(mockFrom).toHaveBeenCalledWith('bookings')
+    expect(chain.select).toHaveBeenCalledWith(expect.stringContaining(LOCATION_SCOPE_EMBED))
+    expect(chain.eq).toHaveBeenCalledWith(LOCATION_SCOPE_FILTER, 'loc-1')
   })
 })
 
@@ -208,10 +246,17 @@ describe('listInHouse', () => {
     expect(result).toEqual([{ id: 'b1' }])
   })
 
-  it('short-circuits when the location has no apartments', async () => {
-    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
-    await expect(listInHouse('loc-1')).resolves.toEqual([])
-    expect(mockFrom).not.toHaveBeenCalled()
+  it('scopes to a location in a single query, without an ID list', async () => {
+    const chain: any = {
+      select: vi.fn(() => chain), lte: () => chain, gt: () => chain, neq: () => chain, order: () => chain,
+      eq: vi.fn(() => Promise.resolve({ data: [{ id: 'b1' }], error: null })),
+    }
+    mockFrom.mockReturnValue(chain)
+
+    await expect(listInHouse('loc-1')).resolves.toEqual([{ id: 'b1' }])
+    expect(mockFrom).toHaveBeenCalledTimes(1)
+    expect(chain.select).toHaveBeenCalledWith(expect.stringContaining(LOCATION_SCOPE_EMBED))
+    expect(chain.eq).toHaveBeenCalledWith(LOCATION_SCOPE_FILTER, 'loc-1')
   })
 })
 
@@ -227,9 +272,16 @@ describe('getBookingStatusSummary', () => {
     expect(result).toEqual({ active: 2, upcoming: 2, checkouts: 2, cancelled: 2 })
   })
 
-  it('returns all zeros when the location has no apartments', async () => {
-    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
-    await expect(getBookingStatusSummary('loc-1')).resolves.toEqual({ active: 0, upcoming: 0, checkouts: 0, cancelled: 0 })
+  it('applies the location scope to every count query', async () => {
+    const chain: any = { select: vi.fn(() => chain), eq: vi.fn(() => chain), gte: () => chain, lte: () => chain }
+    chain.then = (resolve: (value: { count: number }) => void) => resolve({ count: 1 })
+    mockFrom.mockReturnValue(chain)
+
+    const result = await getBookingStatusSummary('loc-1')
+    expect(mockFrom).toHaveBeenCalledTimes(4)
+    expect(chain.select).toHaveBeenCalledWith(expect.stringContaining(LOCATION_SCOPE_EMBED), { count: 'exact', head: true })
+    expect(chain.eq.mock.calls.filter((c: unknown[]) => c[0] === LOCATION_SCOPE_FILTER && c[1] === 'loc-1')).toHaveLength(4)
+    expect(result).toEqual({ active: 1, upcoming: 1, checkouts: 1, cancelled: 1 })
   })
 })
 

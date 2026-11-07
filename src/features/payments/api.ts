@@ -1,6 +1,4 @@
 import { supabase } from '@/shared/lib/supabase'
-import { listApartmentIds } from '@/features/apartments/api'
-import { listBookingIdsForApartments } from '@/features/bookings/api'
 import { todayLocalISO } from '@/shared/lib/bookingUtils'
 
 // The only module allowed to query the `payments` table directly, or call
@@ -61,21 +59,21 @@ const LIST_SELECT = `
   )
 `
 
-// filters: locationId (scopes via apartments -> bookings), dateFrom/dateTo
-// (inclusive, on payment_date), limit. Reused as-is by the Payments page,
-// Dashboard (today's revenue + recent payments), and Reports (date-range
-// revenue) — previously each re-implemented the location-scoping chain.
-export async function listPayments(filters: PaymentFilters = {}): Promise<Payment[]> {
-  let bookingIds: string[] | null = null
-  if (filters.locationId) {
-    const aptIds = await listApartmentIds(filters.locationId)
-    if (aptIds.length === 0) return []
-    bookingIds = await listBookingIdsForApartments(aptIds)
-    if (bookingIds.length === 0) return []
-  }
+// Keeps only payments whose booking has a room at the location. The database
+// does the join, so the URL stays the same size however many bookings the
+// location has (see LOCATION_SCOPE in bookings/api.ts for why an ID list broke).
+// The `loc_scope` embed is only there to filter and callers ignore it.
+const LOCATION_SCOPE = `loc_scope:bookings!inner(rooms:booking_apartments!inner(apartment:apartments!inner(location_id)))`
+export const PAYMENT_LOCATION_SCOPE_FILTER = 'loc_scope.rooms.apartment.location_id'
 
-  let query = supabase.from('payments').select(LIST_SELECT).order('created_at', { ascending: false })
-  if (bookingIds) query = query.in('booking_id', bookingIds)
+// filters: locationId (payments for bookings with a room at that location),
+// dateFrom/dateTo (inclusive, on payment_date), limit. Reused as-is by the
+// Payments page, Dashboard (today's revenue + recent payments), and Reports
+// (date-range revenue).
+export async function listPayments(filters: PaymentFilters = {}): Promise<Payment[]> {
+  const select = filters.locationId ? `${LIST_SELECT}, ${LOCATION_SCOPE}` : LIST_SELECT
+  let query = supabase.from('payments').select(select).order('created_at', { ascending: false })
+  if (filters.locationId) query = query.eq(PAYMENT_LOCATION_SCOPE_FILTER, filters.locationId)
   if (filters.dateFrom) query = query.gte('payment_date', filters.dateFrom)
   if (filters.dateTo) query = query.lte('payment_date', filters.dateTo)
   if (filters.limit) query = query.limit(filters.limit)

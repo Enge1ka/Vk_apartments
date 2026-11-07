@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { emitMetric } from '@/shared/lib/metrics'
+import { getErrorMessage } from '@/shared/lib/utils'
 
 // Replaces the repeated `useState(loading/error/data) + useEffect` pattern
 // that was hand-rolled in every page (see useApartments/useBookings, which
@@ -33,7 +34,9 @@ export function useSupabaseQuery<T>(queryFn: () => Promise<T>, deps: unknown[] =
       setError(null)
     } catch (err) {
       if (id !== requestId.current) return
-      setError(err instanceof Error ? err : new Error(String(err)))
+      // Supabase query errors are plain objects, not Error instances, so
+      // String(err) would show "[object Object]" — pull out the real message.
+      setError(err instanceof Error ? err : new Error(getErrorMessage(err)))
       status = 'error'
     } finally {
       if (id === requestId.current) setLoading(false)

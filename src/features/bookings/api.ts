@@ -221,36 +221,33 @@ const INHOUSE_SELECT = `
   ${ROOM_SUMMARY}
 `
 
-// Booking IDs that have at least one room in the given location — the
-// replacement for the old `bookings.apartment_id IN (...)` scoping now that
-// the apartment link lives on booking_apartments.
-async function bookingIdsForLocation(locationId: string): Promise<string[]> {
-  const aptIds = await listApartmentIds(locationId)
-  if (aptIds.length === 0) return []
-  const { data, error } = await supabase.from('booking_apartments').select('booking_id').in('apartment_id', aptIds)
-  if (error) throw error
-  return [...new Set((data ?? []).map(r => r.booking_id as string))]
+// Scopes a bookings query to one location: keeps only bookings with at least
+// one room there. The database does the join, so nothing grows with the
+// number of bookings. (This used to fetch every booking ID at the location
+// and send them back as `id=in.(...)` in the URL. At ~640 bookings that URL
+// passed 25 KB and the API rejected every request with a 400.)
+// `!inner` on both levels drops bookings with no matching room. The
+// `loc_scope` embed is only there to filter and callers ignore it.
+const LOCATION_SCOPE = `loc_scope:booking_apartments!inner(apartment:apartments!inner(location_id))`
+export const LOCATION_SCOPE_FILTER = 'loc_scope.apartment.location_id'
+
+function withLocationScope(select: string, locationId: string | null | undefined): string {
+  return locationId ? `${select}, ${LOCATION_SCOPE}` : select
 }
 
 async function listUpcomingByDate(
   dateColumn: 'check_in_date' | 'check_out_date',
   { locationId, fromDate, toDate, limit = 5 }: DateRangeFilters
 ): Promise<UpcomingBooking[]> {
-  let bookingIds: string[] | null = null
-  if (locationId) {
-    bookingIds = await bookingIdsForLocation(locationId)
-    if (bookingIds.length === 0) return []
-  }
-
   let query = supabase
     .from('bookings')
-    .select(UPCOMING_SELECT)
+    .select(withLocationScope(UPCOMING_SELECT, locationId))
     .gte(dateColumn, fromDate)
     .lte(dateColumn, toDate)
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .order(dateColumn)
     .limit(limit)
-  if (bookingIds) query = query.in('id', bookingIds)
+  if (locationId) query = query.eq(LOCATION_SCOPE_FILTER, locationId)
 
   const { data, error } = await query
   if (error) throw error
@@ -270,21 +267,15 @@ export function listUpcomingCheckOuts(filters: DateRangeFilters): Promise<Upcomi
 export async function listInHouse(locationId: string | null): Promise<InHouseBooking[]> {
   const today = todayLocalISO()
 
-  let bookingIds: string[] | null = null
-  if (locationId) {
-    bookingIds = await bookingIdsForLocation(locationId)
-    if (bookingIds.length === 0) return []
-  }
-
   let query = supabase
     .from('bookings')
-    .select(INHOUSE_SELECT)
+    .select(withLocationScope(INHOUSE_SELECT, locationId))
     .lte('check_in_date', today)
     .gt('check_out_date', today)
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .neq('booking_status', BOOKING_STATUS.CHECKED_OUT)
     .order('check_out_date')
-  if (bookingIds) query = query.in('id', bookingIds)
+  if (locationId) query = query.eq(LOCATION_SCOPE_FILTER, locationId)
 
   const { data, error } = await query
   if (error) throw error
@@ -342,19 +333,13 @@ export async function listOverdueRooms(locationId: string | null): Promise<Overd
 }
 
 export async function listOutstandingBookings(locationId: string | null): Promise<OutstandingBooking[]> {
-  let bookingIds: string[] | null = null
-  if (locationId) {
-    bookingIds = await bookingIdsForLocation(locationId)
-    if (bookingIds.length === 0) return []
-  }
-
   let query = supabase
     .from('bookings')
-    .select(OUTSTANDING_SELECT)
+    .select(withLocationScope(OUTSTANDING_SELECT, locationId))
     .gt('outstanding_balance', 0)
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .order('outstanding_balance', { ascending: false })
-  if (bookingIds) query = query.in('id', bookingIds)
+  if (locationId) query = query.eq(LOCATION_SCOPE_FILTER, locationId)
 
   const { data, error } = await query
   if (error) throw error
@@ -364,18 +349,12 @@ export async function listOutstandingBookings(locationId: string | null): Promis
 // Counts for the Reports "Bookings" tab. "active" and "checkouts" can overlap
 // (a checked-in booking due out today counts in both).
 export async function getBookingStatusSummary(locationId: string | null): Promise<BookingStatusSummary> {
-  let bookingIds: string[] | null = null
-  if (locationId) {
-    bookingIds = await bookingIdsForLocation(locationId)
-    if (bookingIds.length === 0) return { active: 0, upcoming: 0, checkouts: 0, cancelled: 0 }
-  }
-
   const today = todayLocalISO()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function countQuery(status: string, refine?: (q: any) => any) {
-    let q = supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('booking_status', status)
-    if (bookingIds) q = q.in('id', bookingIds)
+    let q = supabase.from('bookings').select(withLocationScope('id', locationId), { count: 'exact', head: true }).eq('booking_status', status)
+    if (locationId) q = q.eq(LOCATION_SCOPE_FILTER, locationId)
     return refine ? refine(q) : q
   }
 
@@ -395,16 +374,10 @@ export async function getBookingStatusSummary(locationId: string | null): Promis
 }
 
 export async function listBookings(filters: BookingFilters = {}): Promise<BookingListItem[]> {
-  let bookingIds: string[] | null = null
-  if (filters.locationId) {
-    bookingIds = await bookingIdsForLocation(filters.locationId)
-    if (bookingIds.length === 0) return []
-  }
-
-  let query = supabase.from('bookings').select(LIST_SELECT).order('created_at', { ascending: false })
+  let query = supabase.from('bookings').select(withLocationScope(LIST_SELECT, filters.locationId)).order('created_at', { ascending: false })
   if (filters.status) query = query.eq('booking_status', filters.status)
   if (filters.paymentStatus) query = query.eq('payment_status', filters.paymentStatus)
-  if (bookingIds) query = query.in('id', bookingIds)
+  if (filters.locationId) query = query.eq(LOCATION_SCOPE_FILTER, filters.locationId)
 
   const { data, error } = await query
   if (error) throw error
@@ -491,29 +464,14 @@ export async function getBooking(id: string): Promise<Booking> {
   return data as unknown as Booking
 }
 
-// Booking IDs that include any of the given apartments — used by payments/api
-// to scope the payments list to a location.
-export async function listBookingIdsForApartments(apartmentIds: string[]): Promise<string[]> {
-  if (apartmentIds.length === 0) return []
-  const { data, error } = await supabase.from('booking_apartments').select('booking_id').in('apartment_id', apartmentIds)
-  if (error) throw error
-  return [...new Set((data ?? []).map(r => r.booking_id as string))]
-}
-
 export async function searchBookingsByReference(searchTerm: string, locationId: string | null): Promise<BookingSearchResult[]> {
-  let bookingIds: string[] | null = null
-  if (locationId) {
-    bookingIds = await bookingIdsForLocation(locationId)
-    if (bookingIds.length === 0) return []
-  }
-
   let query = supabase
     .from('bookings')
-    .select(SEARCH_SELECT)
+    .select(withLocationScope(SEARCH_SELECT, locationId))
     .ilike('booking_reference', `%${searchTerm}%`)
     .neq('booking_status', BOOKING_STATUS.CANCELLED)
     .limit(5)
-  if (bookingIds) query = query.in('id', bookingIds)
+  if (locationId) query = query.eq(LOCATION_SCOPE_FILTER, locationId)
 
   const { data, error } = await query
   if (error) throw error

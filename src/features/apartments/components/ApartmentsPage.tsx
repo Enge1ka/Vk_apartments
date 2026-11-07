@@ -14,6 +14,7 @@ import { validateApartment } from '../validators'
 import { validateLocation } from '@/features/locations/validators'
 import { useApartmentsPage } from '../useApartmentsPage'
 import { ApartmentCard } from './ApartmentCard'
+import { getErrorMessage } from '@/shared/lib/utils'
 
 interface ApartmentFormState {
   location_id: string
@@ -112,7 +113,7 @@ export default function ApartmentsPage() {
       else await createApartment(payload)
     } catch (err) {
       setSaving(false)
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
       return
     }
 
@@ -129,7 +130,7 @@ export default function ApartmentsPage() {
       toast.success('Apartment deleted')
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -147,7 +148,7 @@ export default function ApartmentsPage() {
       created = await createLocation(data)
     } catch (err) {
       setSaving(false)
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
       return
     }
 

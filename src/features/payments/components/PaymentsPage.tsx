@@ -17,6 +17,7 @@ import { searchBookingsByReference, type BookingSearchResult } from '@/features/
 import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
 import { listPayments, recordPayment, type Payment } from '../api'
 import { validatePaymentAmount } from '../validators'
+import { getErrorMessage } from '@/shared/lib/utils'
 
 export default function PaymentsPage() {
   const { isRestricted, locationId } = useAuth()
@@ -41,7 +42,7 @@ export default function PaymentsPage() {
       const results = await searchBookingsByReference(bookingSearch, isRestricted ? locationId : null)
       setBookingResults(results)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -65,7 +66,7 @@ export default function PaymentsPage() {
       setPayError(null)
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -88,7 +89,7 @@ export default function PaymentsPage() {
         bookingRef: p.booking?.booking_reference,
       })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     }
   }
 

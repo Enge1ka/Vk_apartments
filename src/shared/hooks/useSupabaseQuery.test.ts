@@ -30,6 +30,23 @@ describe('useSupabaseQuery', () => {
     expect(result.current.data).toBeNull()
   })
 
+  it('keeps the real message when a plain Supabase error object is thrown', async () => {
+    // What `if (error) throw error` throws after a failed supabase-js query.
+    const queryFn = vi.fn().mockRejectedValue({
+      message: 'permission denied for table payments',
+      details: null,
+      hint: null,
+      code: '42501',
+    })
+    const { result } = renderHook(() => useSupabaseQuery(queryFn, []))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.error).toBeInstanceOf(Error)
+    expect(result.current.error?.message).toBe('permission denied for table payments')
+    expect(result.current.error?.message).not.toContain('[object Object]')
+  })
+
   it('refetch() re-runs the query', async () => {
     const queryFn = vi.fn().mockResolvedValue('ok')
     const { result } = renderHook(() => useSupabaseQuery(queryFn, []))

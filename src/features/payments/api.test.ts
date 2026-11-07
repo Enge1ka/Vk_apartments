@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/shared/lib/supabase'
-import * as apartmentsApi from '@/features/apartments/api'
-import * as bookingsApi from '@/features/bookings/api'
-import { listPayments, recordPayment, recordRefund } from './api'
+import { listPayments, recordPayment, recordRefund, PAYMENT_LOCATION_SCOPE_FILTER } from './api'
 
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -27,20 +25,24 @@ describe('listPayments', () => {
     await expect(listPayments()).resolves.toEqual([{ id: 'p1' }])
   })
 
-  it('scopes to bookings for the location, short-circuiting when there are none', async () => {
-    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue([])
-    await expect(listPayments({ locationId: 'loc-1' })).resolves.toEqual([])
-    expect(mockFrom).not.toHaveBeenCalled()
-  })
-
-  it('filters by resolved booking ids when the location has apartments and bookings', async () => {
-    vi.spyOn(apartmentsApi, 'listApartmentIds').mockResolvedValue(['apt-1'])
-    vi.spyOn(bookingsApi, 'listBookingIdsForApartments').mockResolvedValue(['booking-1'])
-    const chain = { select: () => chain, order: () => chain, in: vi.fn(() => Promise.resolve({ data: [{ id: 'p1' }], error: null })) }
+  // Regression: the old version sent every booking ID at the location as
+  // `booking_id=in.(...)`. Past ~640 bookings the URL hit ~25 KB and the API
+  // rejected it with a 400. Now it's one query filtered by the database.
+  it('scopes to a location in a single query, without a booking ID list', async () => {
+    // No `in` on the fake chain: a `booking_id=in.(...)` filter would throw here.
+    const chain = {
+      select: vi.fn(() => chain), order: () => chain,
+      eq: vi.fn(() => Promise.resolve({ data: [{ id: 'p1' }], error: null })),
+    }
     mockFrom.mockReturnValue(chain as any)
 
     const result = await listPayments({ locationId: 'loc-1' })
-    expect(chain.in).toHaveBeenCalledWith('booking_id', ['booking-1'])
+    expect(mockFrom).toHaveBeenCalledTimes(1)
+    expect(mockFrom).toHaveBeenCalledWith('payments')
+    expect(chain.select).toHaveBeenCalledWith(
+      expect.stringContaining('loc_scope:bookings!inner(rooms:booking_apartments!inner(apartment:apartments!inner(location_id)))'),
+    )
+    expect(chain.eq).toHaveBeenCalledWith(PAYMENT_LOCATION_SCOPE_FILTER, 'loc-1')
     expect(result).toEqual([{ id: 'p1' }])
   })
 

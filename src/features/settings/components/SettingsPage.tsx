@@ -16,6 +16,7 @@ import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import PerformanceTab from '@/features/monitoring/components/PerformanceTab'
 import AuditLogTab from '@/features/audit/components/AuditLogTab'
 import { useAuth } from '@/features/auth/useAuth'
+import { getErrorMessage } from '@/shared/lib/utils'
 
 const TABS = ['Users', 'Locations', 'Audit Log', 'Performance']
 
@@ -55,7 +56,7 @@ export default function SettingsPage() {
       setLocFormErrors({})
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -72,7 +73,7 @@ export default function SettingsPage() {
       toast.success(`${target.full_name || target.email || 'User'} is now ${newRole}`)
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -82,7 +83,7 @@ export default function SettingsPage() {
       toast.success(locationId ? 'Location assigned' : 'Location restriction removed')
       refetch()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(getErrorMessage(err))
     }
   }
 
