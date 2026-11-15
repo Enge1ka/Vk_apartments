@@ -45,6 +45,9 @@ SQL_FILES=(
   supabase-edit-room.sql
   supabase-audit-log.sql
   supabase-extend-segment.sql
+  supabase-switch-room.sql
+  supabase-anon-lockdown.sql
+  supabase-location-rls.sql
 )
 
 echo "==> Checking Supabase CLI login..."
