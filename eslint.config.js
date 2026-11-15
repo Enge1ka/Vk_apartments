@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // supabase/functions is Deno (jsr: imports, Deno globals), not part of the app build.
+  globalIgnores(['dist', 'supabase/functions']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

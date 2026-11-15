@@ -9,6 +9,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { ChevronLeft, Phone, CreditCard, Pencil } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
+import { getErrorMessage } from '@/shared/lib/utils'
 import { useSupabaseQuery } from '@/shared/hooks/useSupabaseQuery'
 import { BOOKING_STATUS_BADGE, PAYMENT_STATUS_BADGE, getBadge } from '@/shared/constants/status'
 import { getClient, updateClient } from '../api'
@@ -48,8 +49,8 @@ export default function ClientDetailPage() {
       toast.success('Client updated')
       setEditOpen(false)
       refetch()
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to update client')
+    } catch (e) {
+      toast.error(getErrorMessage(e) || 'Failed to update client')
     } finally {
       setSaving(false)
     }

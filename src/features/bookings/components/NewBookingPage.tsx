@@ -16,6 +16,7 @@ import { listAvailableApartmentsForDates, type Apartment } from '@/features/apar
 import { listLocations, type Location } from '@/features/locations/api'
 import { searchClients, type Client } from '@/features/clients/api'
 import { recordPayment } from '@/features/payments/api'
+import { sendBookingConfirmation, summarizeSendResults } from '@/features/notifications/api'
 import { createBooking } from '../api'
 import { validateClientStep, validateInitialPayment } from '../validators'
 
@@ -238,6 +239,24 @@ export default function NewBookingPage() {
   function next() { if (validateStep()) setStep(s => Math.min(s + 1, 3)) }
   function back() { setStep(s => Math.max(s - 1, 0)) }
 
+  // Sends the confirmation to the client by email and WhatsApp. Runs in the
+  // background once the booking (and any first payment, so the amounts in
+  // the message are right) is saved: a slow or failed send must never hold
+  // up or undo the booking. Every attempt is logged server-side and shown on
+  // the booking page, where staff can resend.
+  function notifyClient(bookingId: string) {
+    sendBookingConfirmation(bookingId)
+      .then(results => {
+        // Stay quiet when nothing could be sent (no email on file, channel
+        // not set up): that's routine, and the booking page shows why.
+        // Only a real delivery failure interrupts the staff member.
+        const summary = summarizeSendResults(results)
+        if (summary.ok) toast.success(summary.message)
+        else if (results.some(r => r.status === 'failed')) toast.error(summary.message, { duration: 6000 })
+      })
+      .catch(err => toast.error(`Confirmation not sent: ${getErrorMessage(err)}`, { duration: 6000 }))
+  }
+
   async function handleConfirm() {
     if (!validateStep()) return
     setSaving(true)
@@ -302,12 +321,14 @@ export default function NewBookingPage() {
       } catch {
         setSaving(false)
         toast.error('Booking created but payment failed. Please record the payment from the booking page.')
+        notifyClient(booking.bookingId)
         navigate(`/bookings/${booking.bookingId}`)
         return
       }
     }
 
     setSaving(false)
+    notifyClient(booking.bookingId)
     toast.success(`Booking ${booking.bookingRef} created!`)
     navigate(`/bookings/${booking.bookingId}`)
   }

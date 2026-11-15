@@ -48,6 +48,7 @@ SQL_FILES=(
   supabase-switch-room.sql
   supabase-anon-lockdown.sql
   supabase-location-rls.sql
+  supabase-booking-notifications.sql
 )
 
 echo "==> Checking Supabase CLI login..."

@@ -20,6 +20,7 @@ import type { BookingStatus } from '@/shared/constants/status'
 import { cancelBooking, updateRoomStatus, extendRoom, extendRoomNewRate, shortenRoom, editRoom, switchRoom, type BookingRoom } from '../api'
 import { listAvailableApartmentsForDates, type Apartment } from '@/features/apartments/api'
 import { recordPayment, recordRefund } from '@/features/payments/api'
+import { ConfirmationCard } from '@/features/notifications/components/ConfirmationCard'
 import { validatePaymentAmount } from '@/features/payments/validators'
 import { validateCancellationReason } from '../validators'
 import { useBookingDetail } from '../useBookingDetail'
@@ -426,6 +427,13 @@ export default function BookingDetailPage() {
           {booking.client?.company && <p className="text-gray-400">{booking.client.company}</p>}
         </CardContent>
       </Card>
+
+      <ConfirmationCard
+        bookingId={booking.id}
+        hasEmail={!!booking.client?.email}
+        hasPhone={!!booking.client?.phone}
+        disabled={isCancelled}
+      />
 
       <Card>
         <CardHeader><CardTitle>Rooms ({apartmentGroups.length})</CardTitle></CardHeader>

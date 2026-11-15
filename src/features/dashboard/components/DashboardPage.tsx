@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
 import { ErrorBanner } from '@/shared/ui/ErrorBanner'
 import { formatCurrency, formatDate } from '@/shared/lib/bookingUtils'
+import { getErrorMessage } from '@/shared/lib/utils'
 import { BOOKING_STATUS, type BookingStatus } from '@/shared/constants/status'
 import { roomNumbers, roomLocationName } from '@/features/bookings/roomDisplay'
 import { updateRoomStatus } from '@/features/bookings/api'
@@ -60,8 +61,8 @@ export default function DashboardPage() {
       await updateRoomStatus(roomId, newStatus)
       toast.success(label)
       refetch()
-    } catch (e: any) {
-      toast.error(e?.message || `Failed: ${label}`)
+    } catch (e) {
+      toast.error(getErrorMessage(e) || `Failed: ${label}`)
     } finally {
       setCheckingOut(prev => { const s = new Set(prev); s.delete(roomId); return s })
     }
